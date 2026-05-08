@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 from config import *
-from forms.base_form import BaseForm, make_grid
+from forms.base_form import BaseForm, make_grid, AccountLOVDialog, InventoryLOVDialog, TransactionSearchDialog
 import database as db
 from datetime import date
 
@@ -64,6 +64,7 @@ class _TransactionBase(BaseForm):
         tk.Entry(hf, textvariable=self._ac_name_var, width=22, bg="#E8E8E8",
                  font=FONT_NORMAL, state="readonly", relief="sunken", bd=2).grid(row=0, column=6, sticky="ew", padx=4, pady=3)
         self._ac_e.bind("<FocusOut>", self._lookup_ac)
+        self._ac_e.bind("<F9>",       self._f9_ac)
 
         tk.Label(hf, text="Term",         bg=FORM_BG, fg=LABEL_FG, font=FONT_BOLD).grid(row=1, column=0, sticky="e", padx=4, pady=3)
         self._term_var = tk.StringVar(value="CREDIT")
@@ -104,6 +105,7 @@ class _TransactionBase(BaseForm):
             e.pack(side="left", padx=2)
             setattr(self, attr, e)
         self._le_code.bind("<FocusOut>", self._lookup_inv)
+        self._le_code.bind("<F9>",       self._f9_inv)
         self._le_qty.bind("<FocusOut>",  self._calc_value)
         self._le_rate.bind("<FocusOut>", self._calc_value)
         tk.Button(ler, text="Add Line",    bg=BTN_BG, font=FONT_SMALL, relief="raised", bd=2,
@@ -192,6 +194,13 @@ class _TransactionBase(BaseForm):
         self._set_hdr_state("disabled")
         self._mode = "view"
 
+    def on_search(self):
+        src = "purchase" if "PURCHASE" in self._TITLE else "sale"
+        dlg = TransactionSearchDialog(self, source=src)
+        if dlg.result:
+            self._current_inv = dlg.result
+            self._load_record(self._current_inv)
+
     def on_ignore(self):
         if self._current_inv:
             self._load_record(self._current_inv)
@@ -202,6 +211,23 @@ class _TransactionBase(BaseForm):
 
     # ── Lines ──────────────────────────────────────────────────────────────────
 
+    def _f9_ac(self, _event):
+        dlg = AccountLOVDialog(self, self._ac_e.get().strip())
+        if dlg.result:
+            code, name = dlg.result
+            self._ac_e.delete(0, "end");     self._ac_e.insert(0, code)
+            self._ac_name_var.set(name)
+            self._party_e.focus_set()
+
+    def _f9_inv(self, _event):
+        dlg = InventoryLOVDialog(self, self._le_code.get().strip())
+        if dlg.result:
+            code, name, unit, rate = dlg.result
+            self._le_code.delete(0, "end"); self._le_code.insert(0, code)
+            self._le_name.delete(0, "end"); self._le_name.insert(0, name)
+            self._le_rate.delete(0, "end"); self._le_rate.insert(0, f"{rate:.2f}")
+            self._le_qty.focus_set()
+
     def _lookup_inv(self, _):
         code = self._le_code.get().strip()
         if not code:
@@ -209,6 +235,9 @@ class _TransactionBase(BaseForm):
         item = db.get_inventory_item(code)
         if item:
             self._le_name.delete(0,"end"); self._le_name.insert(0, item["name"])
+            if not self._le_rate.get().strip():
+                self._le_rate.delete(0, "end")
+                self._le_rate.insert(0, f"{item['last_purchase_rate']:.2f}")
 
     def _calc_value(self, _):
         qty  = _num(self._le_qty.get())

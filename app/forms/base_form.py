@@ -157,6 +157,275 @@ class BaseForm(tk.Toplevel):
         return f
 
 
+# ── F9 Account LOV – "SELECT THE ACCOUNT" ─────────────────────────────────────
+
+class AccountLOVDialog(tk.Toplevel):
+    """
+    Press F9 on any A/C Code field to open this popup.
+    Columns: A/C Name | A/C Code | A/C Head | Balance
+    Returns (ac_code, ac_name) or None.
+    """
+
+    def __init__(self, master, initial_term="%"):
+        super().__init__(master)
+        self.title("SELECT THE ACCOUNT")
+        self.configure(bg=BG)
+        self.resizable(True, True)
+        self.result = None
+        self.grab_set()
+        self.geometry("760x420")
+
+        import database as db
+        self._db = db
+
+        # ── Header ─────────────────────────────────────────────────────────────
+        hdr = tk.Frame(self, bg=GRID_HDR_BG)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="SELECT THE ACCOUNT", bg=GRID_HDR_BG, fg="white",
+                 font=FONT_TITLE, pady=5).pack(side="left", padx=10)
+        tk.Button(hdr, text="✕", bg=GRID_HDR_BG, fg="white", relief="flat",
+                  font=FONT_BOLD, command=self.destroy).pack(side="right", padx=6)
+
+        # ── Find row ───────────────────────────────────────────────────────────
+        fr = tk.Frame(self, bg=BG, pady=6)
+        fr.pack(fill="x", padx=14)
+        tk.Label(fr, text="Find", bg=BG, fg=LABEL_FG, font=FONT_BOLD, width=6).pack(side="left")
+        self._find_var = tk.StringVar(value=initial_term if initial_term else "%")
+        self._find_e = tk.Entry(fr, textvariable=self._find_var, width=36,
+                                bg=ENTRY_BG, font=FONT_MONO, relief="sunken", bd=2)
+        self._find_e.pack(side="left", padx=6)
+        self._find_e.bind("<Return>", lambda e: self._do_find())
+
+        # ── Grid ───────────────────────────────────────────────────────────────
+        cols = [("name","A/C NAME",200), ("code","A/C CODE",70),
+                ("head","A/C HEAD",100), ("hcode","HEAD CODE",80),
+                ("bal","BALANCE",110)]
+        gf, self._tree = make_grid(self, cols, height=14)
+        gf.pack(fill="both", expand=True, padx=10, pady=4)
+        self._tree.bind("<Double-1>",   lambda e: self._ok())
+        self._tree.bind("<Return>",     lambda e: self._ok())
+
+        # ── Buttons ────────────────────────────────────────────────────────────
+        bf = tk.Frame(self, bg=BG, pady=6)
+        bf.pack()
+        for txt, cmd in [("Find", self._do_find), ("OK", self._ok), ("Cancel", self.destroy)]:
+            tk.Button(bf, text=txt, width=10, bg=BTN_BG, font=FONT_NORMAL,
+                      relief="raised", bd=2, command=cmd).pack(side="left", padx=10)
+
+        tk.Frame(self, bg=BOTTOM_BAR, height=5).pack(fill="x", side="bottom")
+
+        self._do_find()
+        self._find_e.focus_set()
+        self.transient(master)
+        self.wait_window(self)
+
+    def _do_find(self):
+        term = self._find_var.get().strip().replace("%", "")
+        self._tree.delete(*self._tree.get_children())
+        rows = self._db.get_all_accounts()
+        if term:
+            rows = [r for r in rows
+                    if term.lower() in r["ac_name"].lower()
+                    or term.lower() in r["ac_code"].lower()]
+        for i, r in enumerate(rows):
+            bal = r["balance"] or 0
+            bal_str = f"DR  {bal:,.2f}" if bal >= 0 else f"CR  {abs(bal):,.2f}"
+            tag = "odd" if i % 2 else "even"
+            self._tree.insert("", "end", iid=str(r["ac_code"]), values=(
+                r["ac_name"], r["ac_code"],
+                r["head_name"] or "", r["head_code"] or "",
+                bal_str
+            ), tags=(tag,))
+        # Select first row
+        children = self._tree.get_children()
+        if children:
+            self._tree.selection_set(children[0])
+            self._tree.see(children[0])
+
+    def _ok(self):
+        sel = self._tree.selection()
+        if not sel:
+            return
+        vals = self._tree.item(sel[0])["values"]
+        self.result = (str(vals[1]), str(vals[0]))  # (code, name)
+        self.destroy()
+
+
+# ── F9 Inventory LOV – "SEARCH BY CODE" ───────────────────────────────────────
+
+class InventoryLOVDialog(tk.Toplevel):
+    """
+    Press F9 on any InvCode field to open this popup.
+    Columns: Code | Name | Head | Unit | Quantity | Value
+    Returns (code, name, unit, last_purchase_rate) or None.
+    """
+
+    def __init__(self, master, initial_term="%"):
+        super().__init__(master)
+        self.title("SEARCH BY CODE")
+        self.configure(bg=BG)
+        self.resizable(True, True)
+        self.result = None
+        self.grab_set()
+        self.geometry("780x420")
+
+        import database as db
+        self._db = db
+
+        hdr = tk.Frame(self, bg=GRID_HDR_BG)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="SEARCH BY CODE", bg=GRID_HDR_BG, fg="white",
+                 font=FONT_TITLE, pady=5).pack(side="left", padx=10)
+        tk.Button(hdr, text="✕", bg=GRID_HDR_BG, fg="white", relief="flat",
+                  font=FONT_BOLD, command=self.destroy).pack(side="right", padx=6)
+
+        fr = tk.Frame(self, bg=BG, pady=6)
+        fr.pack(fill="x", padx=14)
+        tk.Label(fr, text="Find", bg=BG, fg=LABEL_FG, font=FONT_BOLD, width=6).pack(side="left")
+        self._find_var = tk.StringVar(value=initial_term if initial_term else "%")
+        self._find_e = tk.Entry(fr, textvariable=self._find_var, width=36,
+                                bg=ENTRY_BG, font=FONT_MONO, relief="sunken", bd=2)
+        self._find_e.pack(side="left", padx=6)
+        self._find_e.bind("<Return>", lambda e: self._do_find())
+
+        cols = [("code","CODE",70), ("name","NAME",220), ("head","HEAD",70),
+                ("unit","UNIT",50), ("qty","QUANTITY",90), ("val","VALUE",110)]
+        gf, self._tree = make_grid(self, cols, height=14)
+        gf.pack(fill="both", expand=True, padx=10, pady=4)
+        self._tree.bind("<Double-1>", lambda e: self._ok())
+        self._tree.bind("<Return>",   lambda e: self._ok())
+
+        bf = tk.Frame(self, bg=BG, pady=6)
+        bf.pack()
+        for txt, cmd in [("Find", self._do_find), ("OK", self._ok), ("Cancel", self.destroy)]:
+            tk.Button(bf, text=txt, width=10, bg=BTN_BG, font=FONT_NORMAL,
+                      relief="raised", bd=2, command=cmd).pack(side="left", padx=10)
+
+        tk.Frame(self, bg=BOTTOM_BAR, height=5).pack(fill="x", side="bottom")
+
+        self._do_find()
+        self._find_e.focus_set()
+        self.transient(master)
+        self.wait_window(self)
+
+    def _do_find(self):
+        term = self._find_var.get().strip().replace("%", "")
+        self._tree.delete(*self._tree.get_children())
+        rows = self._db.get_all_inventory()
+        if term:
+            rows = [r for r in rows
+                    if term.lower() in r["name"].lower()
+                    or term.lower() in r["code"].lower()]
+        for i, r in enumerate(rows):
+            tag = "odd" if i % 2 else "even"
+            self._tree.insert("", "end", iid=str(r["code"]), values=(
+                r["code"], r["name"], r["head"] or "",
+                r["unit"] or "", f"{r['quantity']:,.2f}", f"{r['value']:,.2f}"
+            ), tags=(tag,))
+        children = self._tree.get_children()
+        if children:
+            self._tree.selection_set(children[0])
+            self._tree.see(children[0])
+
+    def _ok(self):
+        sel = self._tree.selection()
+        if not sel:
+            return
+        vals = self._tree.item(sel[0])["values"]
+        # (code, name, unit, last_purchase_rate)
+        rows = self._db.get_all_inventory()
+        match = next((r for r in rows if str(r["code"]) == str(vals[0])), None)
+        rate = match["last_purchase_rate"] if match else 0.0
+        self.result = (str(vals[0]), str(vals[1]), str(vals[2]), rate)
+        self.destroy()
+
+
+# ── Transaction Search Dialog (Search by Date) ─────────────────────────────────
+
+class TransactionSearchDialog(tk.Toplevel):
+    """
+    Search existing purchase/sales transactions.
+    Returns invoice_no or None.
+    """
+
+    def __init__(self, master, source="purchase"):
+        super().__init__(master)
+        self.title("SEARCH BY DATE")
+        self.configure(bg=BG)
+        self.resizable(True, True)
+        self.result = None
+        self.grab_set()
+        self.geometry("820x420")
+
+        import database as db
+        self._db    = db
+        self._source = source
+
+        hdr = tk.Frame(self, bg=GRID_HDR_BG)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="SEARCH BY DATE", bg=GRID_HDR_BG, fg="white",
+                 font=FONT_TITLE, pady=5).pack(side="left", padx=10)
+        tk.Button(hdr, text="✕", bg=GRID_HDR_BG, fg="white", relief="flat",
+                  font=FONT_BOLD, command=self.destroy).pack(side="right", padx=6)
+
+        fr = tk.Frame(self, bg=BG, pady=6)
+        fr.pack(fill="x", padx=14)
+        tk.Label(fr, text="Find", bg=BG, fg=LABEL_FG, font=FONT_BOLD, width=6).pack(side="left")
+        self._find_var = tk.StringVar(value="%")
+        fe = tk.Entry(fr, textvariable=self._find_var, width=30,
+                      bg=ENTRY_BG, font=FONT_MONO, relief="sunken", bd=2)
+        fe.pack(side="left", padx=6)
+        fe.bind("<Return>", lambda e: self._do_find())
+
+        cols = [("dated","TRANDT",80), ("vno","VCHR",70),
+                ("party","PARTY NAME",180), ("code","CODE",70),
+                ("term","TERM",60), ("total","AMOUNT",100)]
+        gf, self._tree = make_grid(self, cols, height=14)
+        gf.pack(fill="both", expand=True, padx=10, pady=4)
+        self._tree.bind("<Double-1>", lambda e: self._ok())
+        self._tree.bind("<Return>",   lambda e: self._ok())
+
+        bf = tk.Frame(self, bg=BG, pady=6)
+        bf.pack()
+        for txt, cmd in [("Find", self._do_find), ("OK", self._ok), ("Cancel", self.destroy)]:
+            tk.Button(bf, text=txt, width=10, bg=BTN_BG, font=FONT_NORMAL,
+                      relief="raised", bd=2, command=cmd).pack(side="left", padx=10)
+
+        tk.Frame(self, bg=BOTTOM_BAR, height=5).pack(fill="x", side="bottom")
+
+        self._do_find()
+        self.transient(master)
+        self.wait_window(self)
+
+    def _do_find(self):
+        term = self._find_var.get().strip().replace("%", "").lower()
+        self._tree.delete(*self._tree.get_children())
+        rows = (self._db.get_all_purchases() if self._source == "purchase"
+                else self._db.get_all_sales())
+        if term:
+            rows = [r for r in rows
+                    if term in (r["party"] or "").lower()
+                    or term in r["invoice_no"].lower()
+                    or term in r["dated"].lower()]
+        for i, r in enumerate(rows):
+            tag = "odd" if i % 2 else "even"
+            self._tree.insert("", "end", iid=str(r["invoice_no"]), values=(
+                r["dated"], r["invoice_no"],
+                r["party"] or "", r["ac_code"] or "",
+                r["term"], f"{r['total_value']:,.2f}"
+            ), tags=(tag,))
+        children = self._tree.get_children()
+        if children:
+            self._tree.selection_set(children[0])
+
+    def _ok(self):
+        sel = self._tree.selection()
+        if not sel:
+            return
+        self.result = str(self._tree.item(sel[0])["values"][1])  # invoice_no
+        self.destroy()
+
+
 # ── Reusable date-range dialog ─────────────────────────────────────────────────
 
 class DateRangeDialog(tk.Toplevel):

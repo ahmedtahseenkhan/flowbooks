@@ -22,6 +22,7 @@ from licensing import check_license, LicenseStatus, get_machine_id
 def _import_forms():
     from forms.chart_of_accounts  import ChartOfAccounts, DefineHeadingAccounts
     from forms.inventory_master    import InventoryMaster
+    from forms.inventory_heads     import InventoryHeads
     from forms.journal_voucher     import JournalVoucher
     from forms.purchase_form       import PurchaseTransactionsForm, SalesTransactionsForm
     from forms.opening_balances    import OpeningBalancesForm
@@ -136,26 +137,27 @@ class MainWindow(tk.Tk):
         # ── Accounts Setup
         m = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Accounts Setup", menu=m)
-        m.add_command(label="Define Heading Accounts / DHA",    command=lambda: self._open(self._forms["DefineHeadingAccounts"]))
+        m.add_command(label="Define Heading Accounts / DHA",     command=lambda: self._open(self._forms["DefineHeadingAccounts"]))
         m.add_command(label="Chart of Accounts - General / CAG", command=lambda: self._open_coa("general"))
         m.add_command(label="Chart of Accounts - Special / CAS", command=lambda: self._open_coa("special"))
 
         # ── Accounts Transactions
         m2 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Accounts Transactions", menu=m2)
-        m2.add_command(label="Opening Balances Form / OBF",      command=lambda: self._open(self._forms["OpeningBalancesForm"]))
-        m2.add_command(label="Journal Voucher Form / JVF",        command=lambda: self._open(self._forms["JournalVoucher"]))
+        m2.add_command(label="Opening Balances Form / OBF",       command=lambda: self._open(self._forms["OpeningBalancesForm"]))
+        m2.add_command(label="Journal Voucher Form / JVF",         command=lambda: self._open(self._forms["JournalVoucher"]))
         m2.add_separator()
-        m2.add_command(label="Daily General Transactions / DGT",  command=lambda: self._forms["open_daily_transactions"](self))
-        m2.add_command(label="General Ledger Report / GLR",       command=lambda: self._forms["open_general_ledger"](self))
-        m2.add_command(label="General Ledger Detail / GLD",       command=lambda: self._forms["open_screen_ledger"](self))
-        m2.add_command(label="Screen Ledger / SCR_LGR",           command=lambda: self._forms["open_screen_ledger"](self))
-        m2.add_command(label="Trial Balance / TB",                 command=lambda: self._forms["open_trial_balance"](self))
-        m2.add_command(label="Detailed Trial Balance / DTB",       command=lambda: self._forms["open_trial_balance"](self))
+        m2.add_command(label="Daily General Transactions / DGT",   command=lambda: self._forms["open_daily_transactions"](self))
+        m2.add_command(label="General Ledger Report / GLR",        command=lambda: self._forms["open_general_ledger"](self))
+        m2.add_command(label="General Ledger Detail / GLD",        command=lambda: self._forms["open_screen_ledger"](self))
+        m2.add_command(label="Screen Ledger / SCR_LGR",            command=lambda: self._forms["open_screen_ledger"](self))
+        m2.add_command(label="Trial Balance / TB",                  command=lambda: self._forms["open_trial_balance"](self))
+        m2.add_command(label="Detailed Trial Balance / DTB",        command=lambda: self._forms["open_trial_balance"](self))
 
         # ── Inventory Setup
         m3 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Inventory Setup", menu=m3)
+        m3.add_command(label="Inventory Heads",                   command=lambda: self._open(self._forms["InventoryHeads"]))
         m3.add_command(label="Inventory Master",                  command=lambda: self._open(self._forms["InventoryMaster"]))
 
         # ── Inventory Transactions
@@ -175,6 +177,9 @@ class MainWindow(tk.Tk):
         # ── Management Information
         m5 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Management Information", menu=m5)
+        m5.add_command(label="Balance Sheet",                     command=lambda: self._forms["open_trial_balance"](self))
+        m5.add_command(label="Profit & Loss Statement",           command=lambda: self._forms["open_general_ledger"](self))
+        m5.add_separator()
         m5.add_command(label="General Ledger Report",             command=lambda: self._forms["open_general_ledger"](self))
         m5.add_command(label="Trial Balance",                     command=lambda: self._forms["open_trial_balance"](self))
         m5.add_command(label="Inventory Stock Report",            command=lambda: self._forms["open_inventory_stock"](self))
@@ -242,6 +247,7 @@ class MainWindow(tk.Tk):
                 ("Trial Balance / TB",                 lambda: self._forms["open_trial_balance"](self)),
             ]),
             ("Inventory Setup", "#4C6890", [
+                ("Inventory Heads",                    lambda: self._open(self._forms["InventoryHeads"])),
                 ("Inventory Master",                   lambda: self._open(self._forms["InventoryMaster"])),
             ]),
             ("Inventory Transactions", "#4C6890", [
