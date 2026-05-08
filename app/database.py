@@ -1,7 +1,16 @@
 import sqlite3
 import os
+import sys
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flowbooks.db")
+# When frozen by PyInstaller, __file__ points into the temp _MEIPASS extraction
+# folder (read-only, wiped on exit). Store the DB next to the .exe instead so
+# data persists across runs and the user can back it up.
+if getattr(sys, "frozen", False):
+    _DB_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _DB_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(_DB_DIR, "flowbooks.db")
 
 
 def get_connection():
