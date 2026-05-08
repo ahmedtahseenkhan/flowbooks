@@ -106,7 +106,13 @@ class OpeningBalancesForm(BaseForm):
         sel = self._tree.selection()
         if not sel:
             messagebox.showwarning("Delete","Select a record first.", parent=self); return
-        row_id = self._tree.item(sel[0])["values"][4]   # last hidden column = id
+        # The tree iid is the database row id (set in _refresh). The previous
+        # implementation read values[4] which is the date, so the DELETE
+        # silently matched no rows.
+        try:
+            row_id = int(sel[0])
+        except (TypeError, ValueError):
+            messagebox.showerror("Delete","Could not resolve row id.", parent=self); return
         if messagebox.askyesno("Confirm","Delete this opening balance entry?", parent=self):
             db.delete_opening_balance(row_id)
             self._refresh()
@@ -127,7 +133,7 @@ class OpeningBalancesForm(BaseForm):
         td = tc = 0.0
         for i, r in enumerate(rows):
             tag = "odd" if i % 2 else "even"
-            self._tree.insert("", "end", values=(
+            self._tree.insert("", "end", iid=str(r["id"]), values=(
                 r["ac_code"], r["ac_name"],
                 f"{r['debit']:,.2f}", f"{r['credit']:,.2f}", r["dated"]
             ), tags=(tag,))

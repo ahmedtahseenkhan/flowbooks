@@ -8,11 +8,14 @@ import os
 
 # Ensure the app/ directory is in sys.path when run directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Project root (one level up from app/) so the `licensing` package resolves.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tkinter as tk
 from tkinter import messagebox
 import database as db
 from config import *
+from licensing import check_license, LicenseStatus, get_machine_id
 
 # ── Late imports (avoid circular deps) ────────────────────────────────────────
 
@@ -327,10 +330,89 @@ class MainWindow(tk.Tk):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# License gate
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BLOCKING_STATUSES = {
+    LicenseStatus.TRIAL_EXPIRED,
+    LicenseStatus.EXPIRED,
+    LicenseStatus.MACHINE_MISMATCH,
+    LicenseStatus.INVALID_SIGNATURE,
+    LicenseStatus.TAMPERED,
+    LicenseStatus.CLOCK_TAMPERED,
+}
+
+
+def _show_license_block(info):
+    """Modal error window shown when the license is unusable.
+    Always exposes the Machine ID so the user can email it to the vendor."""
+    root = tk.Tk()
+    root.title(f"{APP_NAME} – License")
+    root.configure(bg=BG)
+    root.resizable(False, False)
+
+    hdr = tk.Frame(root, bg=GRID_HDR_BG)
+    hdr.pack(fill="x")
+    tk.Label(hdr, text=f"{APP_NAME} – License Problem", bg=GRID_HDR_BG,
+             fg="white", font=("Arial", 12, "bold"), pady=8).pack()
+
+    body = tk.Frame(root, bg=BG, padx=24, pady=16)
+    body.pack()
+
+    tk.Label(body, text=f"Status: {info.status.name}", bg=BG, fg=LABEL_FG,
+             font=FONT_BOLD, anchor="w").pack(fill="x", pady=(0, 4))
+    tk.Label(body, text=info.message or "", bg=BG, fg="black",
+             font=FONT_NORMAL, wraplength=420, justify="left",
+             anchor="w").pack(fill="x", pady=(0, 10))
+
+    tk.Label(body, text="Machine ID (send this to your vendor):",
+             bg=BG, fg=LABEL_FG, font=FONT_BOLD,
+             anchor="w").pack(fill="x")
+    e = tk.Entry(body, font=FONT_MONO, bg=ENTRY_BG, relief="sunken", bd=2,
+                 width=24, justify="center")
+    e.insert(0, info.machine_id)
+    e.configure(state="readonly")
+    e.pack(fill="x", pady=(2, 12))
+
+    tk.Button(body, text="Exit", width=10, bg=BTN_BG, font=FONT_BOLD,
+              relief="raised", bd=2, command=root.destroy).pack(pady=4)
+    tk.Frame(root, bg=BOTTOM_BAR, height=6).pack(fill="x", side="bottom")
+
+    root.update_idletasks()
+    w, h = 480, root.winfo_reqheight()
+    x = (root.winfo_screenwidth()  - w) // 2
+    y = (root.winfo_screenheight() - h) // 2
+    root.geometry(f"{w}x{h}+{x}+{y}")
+    root.mainloop()
+
+
+def _enforce_license() -> "LicenseInfo | None":
+    """Return the LicenseInfo if the app may proceed, else None."""
+    info = check_license(APP_NAME)
+    if info.status in _BLOCKING_STATUSES:
+        _show_license_block(info)
+        return None
+    if info.status == LicenseStatus.TRIAL_ACTIVE:
+        # Non-blocking trial banner.
+        tmp = tk.Tk(); tmp.withdraw()
+        messagebox.showinfo(
+            f"{APP_NAME} – Trial",
+            f"Trial mode: {info.days_remaining} day(s) remaining.\n"
+            f"Machine ID: {info.machine_id}",
+            parent=tmp,
+        )
+        tmp.destroy()
+    return info
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Application bootstrap
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
+    if _enforce_license() is None:
+        return
+
     db.init_db()
 
     login = LoginWindow()

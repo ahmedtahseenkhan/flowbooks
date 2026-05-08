@@ -9,7 +9,7 @@ inherits from.  It provides:
 """
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from config import *
 
 
@@ -260,7 +260,7 @@ def make_grid(parent, columns, height=12, selectmode="browse"):
     """
     frame = tk.Frame(parent, bg=FORM_BG)
 
-    style = tk.ttk.Style()
+    style = ttk.Style()
     style.configure("Acct.Treeview.Heading", background=GRID_HDR_BG,
                     foreground=GRID_HDR_FG, font=FONT_GRID_H, relief="flat")
     style.configure("Acct.Treeview", background=GRID_ROW1, foreground="black",
@@ -269,9 +269,9 @@ def make_grid(parent, columns, height=12, selectmode="browse"):
               foreground=[("selected", "white")])
 
     ids = [c[0] for c in columns]
-    tree = tk.ttk.Treeview(frame, columns=ids, show="headings",
-                            height=height, style="Acct.Treeview",
-                            selectmode=selectmode)
+    tree = ttk.Treeview(frame, columns=ids, show="headings",
+                        height=height, style="Acct.Treeview",
+                        selectmode=selectmode)
 
     for cid, hdr, w in columns:
         tree.heading(cid, text=hdr)

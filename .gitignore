@@ -3,3 +3,16 @@ __pycache__/
 *.pyo
 *.db
 .DS_Store
+
+# Python virtualenv
+.venv/
+
+# Licensing — never commit private keys or signed license files
+keys/
+*.pem
+*.lic
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
