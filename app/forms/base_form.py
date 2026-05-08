@@ -834,10 +834,10 @@ class InlineEntryGrid(tk.Frame):
             self._widgets[0][eids[0]].focus_set()
 
     def set_editable(self, editable):
-        """Enable or disable all editable cells."""
+        """Enable or lock all editable cells (readonly keeps text visible)."""
         for row in self._widgets:
             for col in self._cols:
                 if col.get("editable", True):
                     e = row.get(col["id"])
                     if e:
-                        e.configure(state="normal" if editable else "disabled")
+                        e.configure(state="normal" if editable else "readonly")

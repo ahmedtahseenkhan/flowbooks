@@ -200,94 +200,65 @@ def init_db():
     conn.close()
 
 
-# ── Accounting engine helpers ─────────────────────────────────────────────────
+# ── Accounting engine (delta approach) ───────────────────────────────────────
+# Deltas preserve manually-set baseline quantities in Inventory Master.
 
-def _recalc_account_balance(conn, ac_code):
-    """Recompute a single account's balance from opening + all JV lines."""
-    row = conn.execute(
-        "SELECT opening FROM chart_of_accounts WHERE ac_code=?", (ac_code,)
-    ).fetchone()
-    if not row:
-        return
-    net = conn.execute(
-        "SELECT COALESCE(SUM(debit),0) - COALESCE(SUM(credit),0) "
-        "FROM journal_voucher_lines WHERE ac_code=?", (ac_code,)
-    ).fetchone()[0]
+def _ac_delta(conn, ac_code, debit_delta, credit_delta):
+    """Apply a debit/credit delta to one account balance."""
     conn.execute(
-        "UPDATE chart_of_accounts SET balance=? WHERE ac_code=?",
-        (row["opening"] + net, ac_code)
-    )
+        "UPDATE chart_of_accounts SET balance = balance + ? - ? WHERE ac_code=?",
+        (debit_delta, credit_delta, ac_code))
 
-
-def _recalc_inventory(conn, inv_code):
-    """Recompute inventory quantity & value from opening stock + purchases - sales + adjustments."""
-    # Opening stock
-    op = conn.execute(
-        "SELECT COALESCE(SUM(quantity),0), COALESCE(SUM(value),0) "
-        "FROM opening_stock WHERE inv_code=?", (inv_code,)
-    ).fetchone()
-    op_qty, op_val = op[0], op[1]
-
-    # Purchases
-    pur = conn.execute("""
-        SELECT COALESCE(SUM(pl.quantity),0), COALESCE(SUM(pl.value),0),
-               MAX(pl.rate), MAX(pt.dated)
-        FROM purchase_lines pl
-        JOIN purchase_transactions pt ON pl.invoice_no = pt.invoice_no
-        WHERE pl.inv_code=?
-    """, (inv_code,)).fetchone()
-    pur_qty, pur_val, last_pur_rate, last_pur_date = pur
-
-    # Carry-forward transactions (treated as additional stock)
-    carry = conn.execute(
-        "SELECT COALESCE(SUM(quantity),0), COALESCE(SUM(value),0) "
-        "FROM carry_lines WHERE inv_code=?", (inv_code,)
-    ).fetchone()
-    carry_qty, carry_val = carry[0], carry[1]
-
-    # Sales
-    sal = conn.execute("""
-        SELECT COALESCE(SUM(sl.quantity),0), COALESCE(SUM(sl.value),0),
-               MAX(sl.rate), MAX(st.dated)
-        FROM sales_lines sl
-        JOIN sales_transactions st ON sl.invoice_no = st.invoice_no
-        WHERE sl.inv_code=?
-    """, (inv_code,)).fetchone()
-    sal_qty, sal_val, last_sal_rate, last_sal_date = sal
-
-    # Value adjustments (new_qty - old_qty)
-    adj = conn.execute(
-        "SELECT COALESCE(SUM(new_qty - old_qty),0), COALESCE(SUM(new_value - old_value),0) "
-        "FROM value_adjustments WHERE inv_code=?", (inv_code,)
-    ).fetchone()
-    adj_qty, adj_val = adj[0], adj[1]
-
-    net_qty = op_qty + pur_qty + carry_qty - sal_qty + adj_qty
-    net_val = op_val + pur_val + carry_val - sal_val + adj_val
-
-    conn.execute("""
-        UPDATE inventory_items SET
-            quantity=?, value=?,
-            last_purchase_rate=COALESCE(?,last_purchase_rate),
-            last_purchase_date=COALESCE(?,last_purchase_date),
-            last_sale_rate=COALESCE(?,last_sale_rate),
-            last_sale_date=COALESCE(?,last_sale_date)
-        WHERE code=?
-    """, (max(0.0, net_qty), max(0.0, net_val),
-          last_pur_rate, last_pur_date,
-          last_sal_rate, last_sal_date,
-          inv_code))
-
+def _inv_delta(conn, inv_code, qty_delta, val_delta,
+               last_rate=None, last_date=None, is_purchase=True):
+    """Apply a qty/value delta to one inventory item (preserves baseline)."""
+    if last_rate and is_purchase:
+        conn.execute("""UPDATE inventory_items
+            SET quantity=MAX(0,quantity+?), value=MAX(0,value+?),
+                last_purchase_rate=?, last_purchase_date=?
+            WHERE code=?""", (qty_delta, val_delta, last_rate, last_date, inv_code))
+    elif last_rate:
+        conn.execute("""UPDATE inventory_items
+            SET quantity=MAX(0,quantity+?), value=MAX(0,value+?),
+                last_sale_rate=?, last_sale_date=?
+            WHERE code=?""", (qty_delta, val_delta, last_rate, last_date, inv_code))
+    else:
+        conn.execute("""UPDATE inventory_items
+            SET quantity=MAX(0,quantity+?), value=MAX(0,value+?)
+            WHERE code=?""", (qty_delta, val_delta, inv_code))
 
 def recalc_all_balances():
-    """Full recalculation of every account balance and every inventory item."""
+    """Full recompute from scratch (repair / audit tool). Normal saves use deltas."""
     with get_connection() as conn:
-        for row in conn.execute("SELECT ac_code FROM chart_of_accounts").fetchall():
-            _recalc_account_balance(conn, row["ac_code"])
-        for row in conn.execute("SELECT code FROM inventory_items").fetchall():
-            _recalc_inventory(conn, row["code"])
+        conn.execute("UPDATE chart_of_accounts SET balance = opening")
+        rows = conn.execute(
+            "SELECT ac_code, COALESCE(SUM(debit),0) d, COALESCE(SUM(credit),0) c "
+            "FROM journal_voucher_lines GROUP BY ac_code").fetchall()
+        for r in rows:
+            conn.execute("UPDATE chart_of_accounts SET balance=balance+?-? WHERE ac_code=?",
+                         (r["d"], r["c"], r["ac_code"]))
+        conn.execute("UPDATE inventory_items SET quantity=0, value=0")
+        for tbl, sign in [("purchase_lines",1),("carry_lines",1),("sales_lines",-1)]:
+            rows2 = conn.execute(
+                f"SELECT inv_code, COALESCE(SUM(quantity)*{sign},0) q, "
+                f"COALESCE(SUM(value)*{sign},0) v FROM {tbl} GROUP BY inv_code").fetchall()
+            for r in rows2:
+                conn.execute("UPDATE inventory_items SET quantity=MAX(0,quantity+?),value=MAX(0,value+?) WHERE code=?",
+                             (r["q"],r["v"],r["inv_code"]))
+        rows3 = conn.execute(
+            "SELECT inv_code, COALESCE(SUM(quantity),0) q, COALESCE(SUM(value),0) v "
+            "FROM opening_stock GROUP BY inv_code").fetchall()
+        for r in rows3:
+            conn.execute("UPDATE inventory_items SET quantity=quantity+?,value=value+? WHERE code=?",
+                         (r["q"],r["v"],r["inv_code"]))
+        rows4 = conn.execute(
+            "SELECT inv_code, COALESCE(SUM(new_qty-old_qty),0) dq, "
+            "COALESCE(SUM(new_value-old_value),0) dv "
+            "FROM value_adjustments GROUP BY inv_code").fetchall()
+        for r in rows4:
+            conn.execute("UPDATE inventory_items SET quantity=MAX(0,quantity+?),value=MAX(0,value+?) WHERE code=?",
+                         (r["dq"],r["dv"],r["inv_code"]))
         conn.commit()
-
 
 # ── Chart of Accounts ──────────────────────────────────────────────────────────
 
@@ -373,29 +344,31 @@ def get_voucher(voucher_no):
 
 def save_voucher(header, lines):
     with get_connection() as conn:
+        # Reverse old lines (if updating existing voucher)
+        old_lines = conn.execute(
+            "SELECT ac_code, debit, credit FROM journal_voucher_lines WHERE voucher_no=?",
+            (header[0],)).fetchall()
+        for r in old_lines:
+            _ac_delta(conn, r["ac_code"], -(r["debit"] or 0), -(r["credit"] or 0))
+        # Save new
         conn.execute("""INSERT OR REPLACE INTO journal_vouchers
             (voucher_no, prepare_date, description, total_debit, total_credit) VALUES (?,?,?,?,?)""", header)
         conn.execute("DELETE FROM journal_voucher_lines WHERE voucher_no=?", (header[0],))
         for ln in lines:
             conn.execute("""INSERT INTO journal_voucher_lines
                 (voucher_no, ac_code, ac_title, debit, credit) VALUES (?,?,?,?,?)""", ln)
-        # Recalculate affected account balances
-        affected = {ln[1] for ln in lines if ln[1]}
-        for ac in affected:
-            _recalc_account_balance(conn, ac)
+            if ln[1]:  # ac_code
+                _ac_delta(conn, ln[1], ln[3] or 0, ln[4] or 0)
         conn.commit()
 
 def delete_voucher(voucher_no):
     with get_connection() as conn:
-        # Capture affected accounts before deleting
         rows = conn.execute(
-            "SELECT DISTINCT ac_code FROM journal_voucher_lines WHERE voucher_no=?",
-            (voucher_no,)
-        ).fetchall()
-        affected = {r["ac_code"] for r in rows}
+            "SELECT ac_code, debit, credit FROM journal_voucher_lines WHERE voucher_no=?",
+            (voucher_no,)).fetchall()
+        for r in rows:
+            _ac_delta(conn, r["ac_code"], -(r["debit"] or 0), -(r["credit"] or 0))
         conn.execute("DELETE FROM journal_vouchers WHERE voucher_no=?", (voucher_no,))
-        for ac in affected:
-            _recalc_account_balance(conn, ac)
         conn.commit()
 
 def next_voucher_no():
@@ -417,6 +390,13 @@ def get_purchase(invoice_no):
 
 def save_purchase(header, lines):
     with get_connection() as conn:
+        # Reverse old lines
+        old_lines = conn.execute(
+            "SELECT inv_code, quantity, rate, value FROM purchase_lines WHERE invoice_no=?",
+            (header[0],)).fetchall()
+        for r in old_lines:
+            _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
+        # Save new
         conn.execute("""INSERT OR REPLACE INTO purchase_transactions
             (invoice_no, dated, ac_code, ac_name, term, party, amount, in_words, description, total_value)
             VALUES (?,?,?,?,?,?,?,?,?,?)""", header)
@@ -424,21 +404,19 @@ def save_purchase(header, lines):
         for ln in lines:
             conn.execute("""INSERT INTO purchase_lines
                 (invoice_no, serial, inv_code, inventory_name, quantity, rate, value) VALUES (?,?,?,?,?,?,?)""", ln)
-        # Recalculate affected inventory items
-        affected = {ln[2] for ln in lines if ln[2]}
-        for code in affected:
-            _recalc_inventory(conn, code)
+            if ln[2]:  # inv_code
+                _inv_delta(conn, ln[2], ln[4] or 0, ln[6] or 0,
+                           last_rate=ln[5], last_date=header[1], is_purchase=True)
         conn.commit()
 
 def delete_purchase(invoice_no):
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT inv_code FROM purchase_lines WHERE invoice_no=?", (invoice_no,)
-        ).fetchall()
-        affected = {r["inv_code"] for r in rows}
+            "SELECT inv_code, quantity, rate, value FROM purchase_lines WHERE invoice_no=?",
+            (invoice_no,)).fetchall()
+        for r in rows:
+            _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
         conn.execute("DELETE FROM purchase_transactions WHERE invoice_no=?", (invoice_no,))
-        for code in affected:
-            _recalc_inventory(conn, code)
         conn.commit()
 
 def next_invoice_no(table="purchase_transactions"):
@@ -460,6 +438,13 @@ def get_sale(invoice_no):
 
 def save_sale(header, lines):
     with get_connection() as conn:
+        # Reverse old lines
+        old_lines = conn.execute(
+            "SELECT inv_code, quantity, rate, value FROM sales_lines WHERE invoice_no=?",
+            (header[0],)).fetchall()
+        for r in old_lines:
+            _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)  # add back
+        # Save new
         conn.execute("""INSERT OR REPLACE INTO sales_transactions
             (invoice_no, dated, ac_code, ac_name, term, party, amount, in_words, description, total_value)
             VALUES (?,?,?,?,?,?,?,?,?,?)""", header)
@@ -467,20 +452,19 @@ def save_sale(header, lines):
         for ln in lines:
             conn.execute("""INSERT INTO sales_lines
                 (invoice_no, serial, inv_code, inventory_name, quantity, rate, value) VALUES (?,?,?,?,?,?,?)""", ln)
-        affected = {ln[2] for ln in lines if ln[2]}
-        for code in affected:
-            _recalc_inventory(conn, code)
+            if ln[2]:  # inv_code
+                _inv_delta(conn, ln[2], -(ln[4] or 0), -(ln[6] or 0),
+                           last_rate=ln[5], last_date=header[1], is_purchase=False)
         conn.commit()
 
 def delete_sale(invoice_no):
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT inv_code FROM sales_lines WHERE invoice_no=?", (invoice_no,)
-        ).fetchall()
-        affected = {r["inv_code"] for r in rows}
+            "SELECT inv_code, quantity, rate, value FROM sales_lines WHERE invoice_no=?",
+            (invoice_no,)).fetchall()
+        for r in rows:
+            _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)  # add back
         conn.execute("DELETE FROM sales_transactions WHERE invoice_no=?", (invoice_no,))
-        for code in affected:
-            _recalc_inventory(conn, code)
         conn.commit()
 
 # ── Opening Balances ───────────────────────────────────────────────────────────
@@ -590,13 +574,15 @@ def save_opening_stock(inv_code, inv_name, qty, rate, value, dated):
         conn.execute("""INSERT INTO opening_stock
             (inv_code, inventory_name, quantity, rate, value, dated) VALUES (?,?,?,?,?,?)""",
             (inv_code, inv_name, qty, rate, value, dated))
-        _recalc_inventory(conn, inv_code)
+        _inv_delta(conn, inv_code, qty, value, last_rate=rate, last_date=dated)
         conn.commit()
 
 def delete_opening_stock(row_id, inv_code):
     with get_connection() as conn:
+        row = conn.execute("SELECT quantity, value FROM opening_stock WHERE id=?", (row_id,)).fetchone()
+        if row:
+            _inv_delta(conn, inv_code, -(row["quantity"] or 0), -(row["value"] or 0))
         conn.execute("DELETE FROM opening_stock WHERE id=?", (row_id,))
-        _recalc_inventory(conn, inv_code)
         conn.commit()
 
 
@@ -620,18 +606,18 @@ def save_carry(header, lines):
         for ln in lines:
             conn.execute("""INSERT INTO carry_lines
                 (invoice_no, inv_code, inventory_name, quantity, rate, value) VALUES (?,?,?,?,?,?)""", ln)
-        affected = {ln[1] for ln in lines if ln[1]}
-        for code in affected:
-            _recalc_inventory(conn, code)
+        for ln in lines:
+            if ln[1]:
+                _inv_delta(conn, ln[1], ln[3] or 0, ln[5] or 0,
+                           last_rate=ln[4], last_date=header[1])
         conn.commit()
 
 def delete_carry(invoice_no):
     with get_connection() as conn:
-        rows = conn.execute("SELECT DISTINCT inv_code FROM carry_lines WHERE invoice_no=?", (invoice_no,)).fetchall()
-        affected = {r["inv_code"] for r in rows}
+        rows = conn.execute("SELECT inv_code, quantity, value FROM carry_lines WHERE invoice_no=?", (invoice_no,)).fetchall()
+        for r in rows:
+            _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
         conn.execute("DELETE FROM carry_transactions WHERE invoice_no=?", (invoice_no,))
-        for code in affected:
-            _recalc_inventory(conn, code)
         conn.commit()
 
 def next_carry_no():
@@ -657,13 +643,15 @@ def save_value_adjustment(ref_no, adj_type, inv_code, inv_name,
             VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (ref_no, adj_type, inv_code, inv_name,
              old_qty, new_qty, old_value, new_value, dated, description))
-        _recalc_inventory(conn, inv_code)
+        _inv_delta(conn, inv_code, new_qty - old_qty, new_value - old_value)
         conn.commit()
 
 def delete_value_adjustment(row_id, inv_code):
     with get_connection() as conn:
+        row = conn.execute("SELECT old_qty, new_qty, old_value, new_value FROM value_adjustments WHERE id=?", (row_id,)).fetchone()
+        if row:
+            _inv_delta(conn, inv_code, -(row["new_qty"]-row["old_qty"]), -(row["new_value"]-row["old_value"]))
         conn.execute("DELETE FROM value_adjustments WHERE id=?", (row_id,))
-        _recalc_inventory(conn, inv_code)
         conn.commit()
 
 def auto_value_adjust(dated):
