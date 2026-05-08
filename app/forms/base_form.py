@@ -561,3 +561,283 @@ def make_grid(parent, columns, height=12, selectmode="browse"):
 def stripe_tree(tree):
     for i, item in enumerate(tree.get_children()):
         tree.item(item, tags=("odd" if i % 2 else "even",))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# InlineEntryGrid – keyboard-driven data entry grid (Tab navigates, auto-calc)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class InlineEntryGrid(tk.Frame):
+    """
+    Scrollable inline entry grid that works exactly like the original Oracle
+    Forms blocks:
+      • Tab moves left-to-right across editable cells, then to the next row
+      • Tabbing past the last row creates a new blank row automatically
+      • F9 on any cell triggers the LOV callback
+      • FocusOut triggers auto-lookup / auto-calculate callbacks
+      • Totals update on every KeyRelease
+
+    columns  – list of dicts:
+        id        : unique key
+        header    : column header text
+        width     : Entry width in characters
+        editable  : bool (default True); False = auto-filled, shown read-only
+        align     : "left" | "right"  (default "left")
+        bold      : bool (default False) — make auto-filled column bold/coloured
+
+    Callbacks (set after construction):
+        on_focus_out(row_idx, col_id, value) – called when an editable cell loses focus
+        on_f9(row_idx, col_id, value)        – called when F9 is pressed
+        on_change(all_rows)                  – called on any keystroke (for live totals)
+        on_delete_row(row_idx)               – called when a row is deleted
+    """
+
+    ROW_H = 22
+
+    def __init__(self, parent, columns, start_rows=15, **kw):
+        super().__init__(parent, bg=FORM_BG, **kw)
+        self._cols       = columns
+        self._start_rows = start_rows
+        self._widgets    = []   # list of  {col_id: Entry}
+        self._frames     = []   # list of  row Frame
+
+        # Public callbacks
+        self.on_focus_out  = None
+        self.on_f9         = None
+        self.on_change     = None
+        self.on_delete_row = None
+
+        self._build()
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+
+    def _build(self):
+        # Header bar
+        hdr = tk.Frame(self, bg=GRID_HDR_BG, height=self.ROW_H + 2)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+        for col in self._cols:
+            anchor = "e" if col.get("align") == "right" else "w"
+            tk.Label(hdr, text=col["header"], bg=GRID_HDR_BG, fg=GRID_HDR_FG,
+                     font=FONT_GRID_H, width=col["width"],
+                     anchor=anchor, padx=2).pack(side="left", padx=1)
+        # Reserve space for scrollbar
+        tk.Label(hdr, text="", bg=GRID_HDR_BG, width=2).pack(side="right")
+
+        # Scrollable body
+        body = tk.Frame(self, bg=FORM_BG)
+        body.pack(fill="both", expand=True)
+
+        self._canvas = tk.Canvas(body, bg=GRID_ROW1, highlightthickness=0)
+        vsb = tk.Scrollbar(body, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
+
+        self._inner = tk.Frame(self._canvas, bg=GRID_ROW1)
+        self._cwin  = self._canvas.create_window((0, 0), window=self._inner, anchor="nw")
+
+        self._inner.bind("<Configure>",
+            lambda e: self._canvas.configure(
+                scrollregion=self._canvas.bbox("all")))
+        self._canvas.bind("<Configure>",
+            lambda e: self._canvas.itemconfig(self._cwin, width=e.width))
+        self._canvas.bind("<MouseWheel>",
+            lambda e: self._canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self._inner.bind("<MouseWheel>",
+            lambda e: self._canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        # Draw initial blank rows
+        for _ in range(self._start_rows):
+            self._add_row()
+
+    def _row_bg(self, idx):
+        return GRID_ROW1 if idx % 2 == 0 else GRID_ROW2
+
+    def _add_row(self, values=None):
+        idx = len(self._widgets)
+        bg  = self._row_bg(idx)
+
+        rf = tk.Frame(self._inner, bg=bg, height=self.ROW_H)
+        rf.pack(fill="x")
+        rf.pack_propagate(False)
+
+        row = {}
+        for col in self._cols:
+            cid      = col["id"]
+            editable = col.get("editable", True)
+            align    = col.get("align", "left")
+            bold_col = col.get("bold", False)
+            w        = col["width"]
+
+            entry_bg = ENTRY_BG if editable else "#E4E8F0"
+            entry_fg = "#000080" if bold_col else "black"
+            fnt      = FONT_GRID_H if bold_col else FONT_GRID
+
+            e = tk.Entry(rf, width=w, bg=entry_bg, fg=entry_fg, font=fnt,
+                         relief="flat", bd=0,
+                         state="normal" if editable else "readonly",
+                         justify="right" if align == "right" else "left",
+                         highlightthickness=1,
+                         highlightbackground="#B0B8C8",
+                         highlightcolor=GRID_HDR_BG)
+            e.pack(side="left", padx=1, pady=1, ipady=1)
+
+            if values and cid in values:
+                v = values[cid]
+                if not editable:
+                    e.configure(state="normal")
+                e.delete(0, "end")
+                e.insert(0, str(v) if v is not None else "")
+                if not editable:
+                    e.configure(state="readonly")
+
+            if editable:
+                e.bind("<Tab>",        lambda ev, r=idx, c=cid: self._tab(ev, r, c))
+                e.bind("<F9>",         lambda ev, r=idx, c=cid: self._f9(r, c))
+                e.bind("<FocusOut>",   lambda ev, r=idx, c=cid: self._fo(r, c))
+                e.bind("<KeyRelease>", lambda ev: self._change())
+                e.bind("<BackSpace>",  lambda ev: self._change())
+
+            row[cid] = e
+
+        self._widgets.append(row)
+        self._frames.append(rf)
+
+        # Scroll to show the new row
+        self._canvas.update_idletasks()
+        self._canvas.yview_moveto(1.0)
+        return row
+
+    # ── Tab navigation ─────────────────────────────────────────────────────────
+
+    def _editable_ids(self):
+        return [c["id"] for c in self._cols if c.get("editable", True)]
+
+    def _tab(self, event, row_idx, col_id):
+        eids = self._editable_ids()
+        try:
+            ci = eids.index(col_id)
+        except ValueError:
+            return
+        if ci < len(eids) - 1:
+            # next editable col in same row
+            self._widgets[row_idx][eids[ci + 1]].focus_set()
+        else:
+            # last col → next row (create if needed)
+            next_r = row_idx + 1
+            if next_r >= len(self._widgets):
+                self._add_row()
+            self._widgets[next_r][eids[0]].focus_set()
+            # Scroll to show it
+            self._canvas.update_idletasks()
+            self._canvas.yview_moveto(
+                next_r / max(1, len(self._widgets)))
+        return "break"
+
+    # ── Callbacks ──────────────────────────────────────────────────────────────
+
+    def _f9(self, row_idx, col_id):
+        val = self._widgets[row_idx][col_id].get()
+        if self.on_f9:
+            self.on_f9(row_idx, col_id, val)
+
+    def _fo(self, row_idx, col_id):
+        val = self._widgets[row_idx][col_id].get().strip()
+        if self.on_focus_out:
+            self.on_focus_out(row_idx, col_id, val)
+
+    def _change(self):
+        if self.on_change:
+            self.on_change(self.get_all_rows())
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def get_value(self, row_idx, col_id):
+        if row_idx < len(self._widgets):
+            e = self._widgets[row_idx].get(col_id)
+            return e.get().strip() if e else ""
+        return ""
+
+    def set_value(self, row_idx, col_id, value):
+        """Set a cell value (works on both editable and readonly cells)."""
+        if row_idx >= len(self._widgets):
+            return
+        e = self._widgets[row_idx].get(col_id)
+        if not e:
+            return
+        s = e.cget("state")
+        e.configure(state="normal")
+        e.delete(0, "end")
+        e.insert(0, str(value) if value is not None else "")
+        e.configure(state=s)
+
+    def get_all_rows(self):
+        """Return non-empty rows as list of dicts."""
+        eids = self._editable_ids()
+        result = []
+        for row in self._widgets:
+            data = {c["id"]: row[c["id"]].get().strip() for c in self._cols}
+            if any(data.get(eid) for eid in eids):
+                result.append(data)
+        return result
+
+    def load_rows(self, data_list):
+        """Clear and load data. data_list = list of dicts."""
+        self.reset()
+        for i, row_data in enumerate(data_list):
+            if i < len(self._widgets):
+                for col in self._cols:
+                    cid = col["id"]
+                    if cid in row_data:
+                        self.set_value(i, cid, row_data[cid])
+            else:
+                self._add_row(row_data)
+        self._change()
+
+    def reset(self):
+        """Clear all rows and redraw blank rows."""
+        for rf in self._frames:
+            rf.destroy()
+        self._widgets = []
+        self._frames  = []
+        for _ in range(self._start_rows):
+            self._add_row()
+
+    def delete_focused_row(self):
+        """Delete whichever row currently has keyboard focus."""
+        focused = self.focus_get()
+        for i, row in enumerate(self._widgets):
+            if focused in row.values():
+                self._delete_row(i)
+                return
+
+    def _delete_row(self, idx):
+        if idx >= len(self._frames):
+            return
+        self._frames[idx].destroy()
+        self._widgets.pop(idx)
+        self._frames.pop(idx)
+        # Re-stripe
+        for i, rf in enumerate(self._frames):
+            rf.configure(bg=self._row_bg(i))
+        # Ensure at least start_rows blank rows remain
+        while len(self._widgets) < self._start_rows:
+            self._add_row()
+        if self.on_delete_row:
+            self.on_delete_row(idx)
+        self._change()
+
+    def focus_first(self):
+        eids = self._editable_ids()
+        if eids and self._widgets:
+            self._widgets[0][eids[0]].focus_set()
+
+    def set_editable(self, editable):
+        """Enable or disable all editable cells."""
+        for row in self._widgets:
+            for col in self._cols:
+                if col.get("editable", True):
+                    e = row.get(col["id"])
+                    if e:
+                        e.configure(state="normal" if editable else "disabled")

@@ -1,43 +1,61 @@
 """
 Purchase Transactions Form / PTF  &  Sales Transactions Form / STF
-Layout matches design images exactly – no bottom transaction list.
+Keyboard-driven UX – matches Oracle Forms design exactly.
+
+Tab flow (header):
+  Invoice# (auto) → Dated → A/C → [auto: Name] → Term → Party → Amount (auto)
+  → In Words → Description → [Tab enters grid]
+
+Tab flow (grid):
+  InvCode → [auto: Inventory Name] → Quantity → Rate → [auto: Value] → next row
+
+F9 on A/C field   → SELECT THE ACCOUNT popup
+F9 on InvCode     → SEARCH BY CODE popup
+Total Value updates live. GL section auto-fills on save.
+Search button     → SEARCH BY DATE popup
 """
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 from config import *
-from forms.base_form import (BaseForm, make_grid,
+from forms.base_form import (BaseForm, InlineEntryGrid, make_grid,
                               AccountLOVDialog, InventoryLOVDialog,
                               TransactionSearchDialog)
 import database as db
 from datetime import date
 
+PURCHASE_COLS = [
+    {"id": "inv_code",  "header": "InvCode",        "width": 9,  "editable": True,  "align": "left"},
+    {"id": "inv_name",  "header": "Inventory Name",  "width": 26, "editable": False, "align": "left"},
+    {"id": "quantity",  "header": "Quantity",        "width": 10, "editable": True,  "align": "right"},
+    {"id": "rate",      "header": "Rate",            "width": 10, "editable": True,  "align": "right"},
+    {"id": "value",     "header": "Value",           "width": 11, "editable": False, "align": "right", "bold": True},
+]
 
-def _num(s):
+
+def _f(v):
     try:
-        return float(str(s).replace(",", "") or 0)
+        return float(str(v).replace(",", "") or 0)
     except ValueError:
         return 0.0
 
 
 class _TransactionBase(BaseForm):
-    """Shared skeleton for Purchase and Sales transaction forms."""
 
-    _TITLE    = "PURCHASE TRANSACTIONS FORM / PTF"
-    _SIDEBAR  = "PURCHASE TRANSACTIONS FORM"
-    _DB_SAVE  = staticmethod(db.save_purchase)
-    _DB_DEL   = staticmethod(db.delete_purchase)
-    _DB_GET   = staticmethod(db.get_purchase)
-    _DB_ALL   = staticmethod(db.get_all_purchases)
-    _DB_NEXT  = "purchase_transactions"
+    _TITLE   = "PURCHASE TRANSACTIONS FORM / PTF"
+    _SIDEBAR = "PURCHASE TRANSACTIONS FORM"
+    _DB_SAVE = staticmethod(db.save_purchase)
+    _DB_DEL  = staticmethod(db.delete_purchase)
+    _DB_GET  = staticmethod(db.get_purchase)
+    _DB_ALL  = staticmethod(db.get_all_purchases)
+    _DB_NEXT = "purchase_transactions"
 
     def __init__(self, master, username="ADMIN"):
         super().__init__(master, self._TITLE, self._SIDEBAR, username,
                          "Alt+A : Add    Alt+E : Edit    Alt+D : Delete    "
                          "Alt+S : Save    Alt+X : Exit    F9 : LOV")
-        self.geometry("860x640")
+        self.geometry("900x660")
         self._current_inv = None
-        self._lines = []
         self._build_form()
         self._bind_keys()
 
@@ -45,136 +63,198 @@ class _TransactionBase(BaseForm):
 
     def _build_form(self):
         c = self.content
+        lkw = dict(bg=FORM_BG, fg=LABEL_FG, font=FONT_BOLD)
+        tkw = dict(bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
 
         # ── Header panel ───────────────────────────────────────────────────────
         hp = tk.Frame(c, bg=FORM_BG, bd=1, relief="groove")
         hp.pack(fill="x", padx=8, pady=6)
         hp.columnconfigure(3, weight=1)
-        hp.columnconfigure(6, weight=1)
+        hp.columnconfigure(7, weight=1)
 
-        # Row 0 – Invoice# | Dated | A/C | Name
-        lkw = dict(bg=FORM_BG, fg=LABEL_FG, font=FONT_BOLD)
-        tkw = dict(bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
-
-        tk.Label(hp, text="Invoice #", **lkw).grid(row=0, column=0, sticky="e", padx=(8,2), pady=4)
+        # Row 0: Invoice # | Dated | A/C | Name
+        tk.Label(hp, text="Invoice #", **lkw).grid(
+            row=0, column=0, sticky="e", padx=(8,2), pady=4)
         self._inv_e = tk.Entry(hp, width=12, **tkw)
         self._inv_e.grid(row=0, column=1, sticky="w", padx=2, pady=4)
 
-        tk.Label(hp, text="Dated", **lkw).grid(row=0, column=2, sticky="e", padx=(6,2), pady=4)
-        self._dated_e = tk.Entry(hp, width=12, bg="#D0DCF0", font=FONT_NORMAL,
-                                 relief="sunken", bd=2)
+        tk.Label(hp, text="Dated", **lkw).grid(
+            row=0, column=2, sticky="e", padx=(6,2), pady=4)
+        self._dated_e = tk.Entry(hp, width=12, bg="#D0DCF0",
+                                 font=FONT_NORMAL, relief="sunken", bd=2)
         self._dated_e.grid(row=0, column=3, sticky="w", padx=2, pady=4)
         self._dated_e.insert(0, date.today().strftime("%d/%m/%Y"))
 
-        tk.Label(hp, text="A/C", **lkw).grid(row=0, column=4, sticky="e", padx=(6,2), pady=4)
+        tk.Label(hp, text="A/C", **lkw).grid(
+            row=0, column=4, sticky="e", padx=(6,2), pady=4)
         self._ac_e = tk.Entry(hp, width=9, **tkw)
         self._ac_e.grid(row=0, column=5, sticky="w", padx=2, pady=4)
 
-        tk.Label(hp, text="Name", **lkw).grid(row=0, column=6, sticky="e", padx=(4,2), pady=4)
+        tk.Label(hp, text="Name", **lkw).grid(
+            row=0, column=6, sticky="e", padx=(4,2), pady=4)
         self._ac_name_var = tk.StringVar()
         tk.Entry(hp, textvariable=self._ac_name_var, width=26,
                  bg="#E8E8E8", font=FONT_NORMAL, state="readonly",
-                 relief="sunken", bd=2).grid(row=0, column=7, sticky="ew", padx=(2,8), pady=4)
+                 relief="sunken", bd=2).grid(
+            row=0, column=7, sticky="ew", padx=(2,8), pady=4)
 
-        # Row 1 – Term | Party | Amount
-        tk.Label(hp, text="Term", **lkw).grid(row=1, column=0, sticky="e", padx=(8,2), pady=4)
+        # Row 1: Term | Party | Amount (auto)
+        tk.Label(hp, text="Term", **lkw).grid(
+            row=1, column=0, sticky="e", padx=(8,2), pady=4)
         self._term_var = tk.StringVar(value="CREDIT")
         tk.OptionMenu(hp, self._term_var, "CREDIT", "CASH").grid(
             row=1, column=1, sticky="w", padx=2, pady=4)
 
-        tk.Label(hp, text="Party", **lkw).grid(row=1, column=2, sticky="e", padx=(6,2), pady=4)
-        self._party_e = tk.Entry(hp, width=30, **tkw)
-        self._party_e.grid(row=1, column=3, columnspan=3, sticky="ew", padx=2, pady=4)
+        tk.Label(hp, text="Party", **lkw).grid(
+            row=1, column=2, sticky="e", padx=(6,2), pady=4)
+        self._party_e = tk.Entry(hp, width=32, **tkw)
+        self._party_e.grid(row=1, column=3, columnspan=3,
+                           sticky="ew", padx=2, pady=4)
 
-        tk.Label(hp, text="Amount", **lkw).grid(row=1, column=6, sticky="e", padx=(4,2), pady=4)
+        tk.Label(hp, text="Amount", **lkw).grid(
+            row=1, column=6, sticky="e", padx=(4,2), pady=4)
         self._amt_var = tk.StringVar(value="")
         tk.Entry(hp, textvariable=self._amt_var, width=16,
-                 bg="#E8E8E8", font=FONT_NORMAL, state="readonly",
-                 relief="sunken", bd=2).grid(row=1, column=7, sticky="ew", padx=(2,8), pady=4)
+                 bg="#E8E8E8", fg="#000080", font=("Arial", 9, "bold"),
+                 state="readonly", relief="sunken", bd=2,
+                 justify="right").grid(row=1, column=7, sticky="ew",
+                                       padx=(2,8), pady=4)
 
-        # Row 2 – In Words
-        tk.Label(hp, text="In Words", **lkw).grid(row=2, column=0, sticky="e", padx=(8,2), pady=4)
+        # Row 2: In Words
+        tk.Label(hp, text="In Words", **lkw).grid(
+            row=2, column=0, sticky="e", padx=(8,2), pady=4)
         self._words_e = tk.Entry(hp, width=72, **tkw)
-        self._words_e.grid(row=2, column=1, columnspan=7, sticky="ew", padx=(2,8), pady=4)
+        self._words_e.grid(row=2, column=1, columnspan=7,
+                           sticky="ew", padx=(2,8), pady=4)
 
-        # Row 3 – Description
-        tk.Label(hp, text="Description", **lkw).grid(row=3, column=0, sticky="e", padx=(8,2), pady=4)
+        # Row 3: Description (Tab from here → grid)
+        tk.Label(hp, text="Description", **lkw).grid(
+            row=3, column=0, sticky="e", padx=(8,2), pady=4)
         self._desc_e = tk.Entry(hp, width=72, **tkw)
-        self._desc_e.grid(row=3, column=1, columnspan=7, sticky="ew", padx=(2,8), pady=4)
+        self._desc_e.grid(row=3, column=1, columnspan=7,
+                          sticky="ew", padx=(2,8), pady=4)
+        self._desc_e.bind("<Tab>",
+            lambda e: (self._grid.focus_first(), "break")[1])
+        self._desc_e.bind("<Return>", lambda e: self._grid.focus_first())
 
-        # ── Inventory lines grid ───────────────────────────────────────────────
-        lcols = [("serial","Seial",45), ("inv_code","InvCode",70),
-                 ("inv_name","Inventory Name",230),
-                 ("qty","Quantity",80), ("rate","Rate",80), ("value","Value",90)]
-        gf, self._ltree = make_grid(c, lcols, height=10)
-        gf.pack(fill="both", expand=True, padx=8, pady=2)
-        self._ltree.bind("<<TreeviewSelect>>", self._on_line_sel)
-        self._ltree.bind("<Delete>", lambda e: self._del_line())
+        # F9 / FocusOut on A/C field
+        self._ac_e.bind("<F9>",       self._f9_ac)
+        self._ac_e.bind("<FocusOut>", self._lookup_ac)
 
-        # ── Status / description echo ──────────────────────────────────────────
-        self._status_var = tk.StringVar(value="")
-        tk.Label(c, textvariable=self._status_var, bg="#C8D0DC", fg=LABEL_FG,
-                 font=FONT_SMALL, anchor="w", relief="sunken",
-                 bd=1).pack(fill="x", padx=8)
+        # ── Inline inventory grid ──────────────────────────────────────────────
+        self._grid = InlineEntryGrid(c, PURCHASE_COLS, start_rows=12)
+        self._grid.pack(fill="both", expand=True, padx=8, pady=2)
+        self._grid.on_focus_out  = self._grid_focus_out
+        self._grid.on_f9         = self._grid_f9
+        self._grid.on_change     = self._grid_changed
+        self._grid.on_delete_row = lambda _: self._update_total()
 
-        # ── Total Value row ────────────────────────────────────────────────────
+        # ── Status echo ────────────────────────────────────────────────────────
+        self._echo_var = tk.StringVar(value="")
+        tk.Label(c, textvariable=self._echo_var,
+                 bg="#C8D0DC", fg=LABEL_FG, font=FONT_SMALL,
+                 anchor="w", relief="sunken", bd=1).pack(fill="x", padx=8)
+
+        # ── Total Value ────────────────────────────────────────────────────────
         tvf = tk.Frame(c, bg=FORM_BG)
         tvf.pack(fill="x", padx=8, pady=2)
         tk.Label(tvf, text="Total Value", bg=FORM_BG, fg=LABEL_FG,
                  font=FONT_BOLD).pack(side="right", padx=4)
         self._total_var = tk.StringVar(value="")
-        tk.Entry(tvf, textvariable=self._total_var, width=16, bg="#E8E8E8",
-                 font=FONT_NORMAL, state="readonly",
-                 relief="sunken", bd=2).pack(side="right", padx=4)
+        tk.Entry(tvf, textvariable=self._total_var, width=16,
+                 bg="#EEF4FF", fg="#000080", font=("Arial", 9, "bold"),
+                 state="readonly", relief="sunken", bd=2,
+                 justify="right").pack(side="right", padx=4)
 
-        # ── Line-entry strip ───────────────────────────────────────────────────
-        ler = tk.Frame(c, bg=FORM_BG, bd=1, relief="groove")
-        ler.pack(fill="x", padx=8, pady=2)
-
-        for attr, lbl, w in [("_le_code","InvCode",9),
-                              ("_le_name","Inventory Name",26),
-                              ("_le_qty", "Quantity",9),
-                              ("_le_rate","Rate",9),
-                              ("_le_val", "Value",10)]:
-            tk.Label(ler, text=lbl, bg=FORM_BG, fg=LABEL_FG,
-                     font=FONT_SMALL).pack(side="left", padx=(6,2))
-            e = tk.Entry(ler, width=w, bg=ENTRY_BG, font=FONT_NORMAL,
-                         relief="sunken", bd=2)
-            e.pack(side="left", padx=2)
-            setattr(self, attr, e)
-
-        self._le_code.bind("<F9>",       self._f9_inv)
-        self._le_code.bind("<FocusOut>", self._lookup_inv)
-        self._le_qty.bind("<FocusOut>",  self._calc_value)
-        self._le_rate.bind("<FocusOut>", self._calc_value)
-
-        tk.Button(ler, text="Add Line",    bg=BTN_BG, font=FONT_SMALL,
-                  relief="raised", bd=2,
-                  command=self._add_line).pack(side="left", padx=6, pady=3)
-        tk.Button(ler, text="Remove Line", bg=BTN_BG, font=FONT_SMALL,
-                  relief="raised", bd=2,
-                  command=self._del_line).pack(side="left", padx=2, pady=3)
-
-        # ── General Ledger Transactions section ───────────────────────────────
+        # ── General Ledger Transactions ────────────────────────────────────────
         glf = tk.LabelFrame(c, text="GENERAL LEDGER TRANSACTIONS",
                             bg=GROUP_BG, fg=LABEL_FG, font=FONT_BOLD,
                             bd=2, relief="groove")
         glf.pack(fill="x", padx=8, pady=4)
-
-        glcols = [("ac_code","A/c Code",80), ("ac_name","A/c Name",280),
+        glcols = [("ac_code","A/c Code",80), ("ac_name","A/c Name",300),
                   ("debit","Debit",110), ("credit","Credit",110)]
-        gf2, self._gltree = make_grid(glf, glcols, height=3)
-        gf2.pack(fill="x", padx=4, pady=4)
-
-        # F9 and FocusOut on A/C field
-        self._ac_e.bind("<F9>",       self._f9_ac)
-        self._ac_e.bind("<FocusOut>", self._lookup_ac)
+        gf, self._gltree = make_grid(glf, glcols, height=3)
+        gf.pack(fill="x", padx=4, pady=4)
 
         self._hdr_entries = [self._dated_e, self._ac_e, self._party_e,
                              self._words_e, self._desc_e]
-        self._set_hdr_state("disabled")
+        self._set_hdr("disabled")
 
-    # ── F9 LOV handlers ────────────────────────────────────────────────────────
+    # ── Grid callbacks ─────────────────────────────────────────────────────────
+
+    def _grid_focus_out(self, row_idx, col_id, value):
+        if col_id == "inv_code" and value:
+            item = db.get_inventory_item(value)
+            if item:
+                self._grid.set_value(row_idx, "inv_name", item["name"])
+                # Pre-fill rate if empty
+                if not self._grid.get_value(row_idx, "rate"):
+                    rate = item["last_purchase_rate"] or 0
+                    self._grid.set_value(row_idx, "rate",
+                                         f"{rate:.2f}" if rate else "")
+            self._calc_value(row_idx)
+
+        elif col_id in ("quantity", "rate"):
+            # Format number
+            if value:
+                try:
+                    n = float(value.replace(",", ""))
+                    self._grid.set_value(row_idx, col_id, f"{n:,.2f}")
+                except ValueError:
+                    pass
+            self._calc_value(row_idx)
+        self._update_total()
+
+    def _calc_value(self, row_idx):
+        qty  = _f(self._grid.get_value(row_idx, "quantity"))
+        rate = _f(self._grid.get_value(row_idx, "rate"))
+        val  = qty * rate
+        self._grid.set_value(row_idx, "value",
+                              f"{val:,.2f}" if val else "")
+
+    def _grid_f9(self, row_idx, col_id, value):
+        if col_id == "inv_code":
+            dlg = InventoryLOVDialog(self, value)
+            if dlg.result:
+                code, name, unit, rate = dlg.result
+                self._grid.set_value(row_idx, "inv_code",  code)
+                self._grid.set_value(row_idx, "inv_name",  name)
+                self._grid.set_value(row_idx, "rate",
+                                     f"{rate:.2f}" if rate else "")
+                # Focus Quantity
+                self._grid._widgets[row_idx]["quantity"].focus_set()
+                self._calc_value(row_idx)
+                self._update_total()
+
+    def _grid_changed(self, rows):
+        self._update_total()
+
+    def _update_total(self):
+        rows  = self._grid.get_all_rows()
+        total = sum(_f(r.get("value", 0)) for r in rows)
+        self._total_var.set(f"{total:,.2f}" if total else "")
+        self._amt_var.set(f"{total:,.2f}" if total else "")
+        self._echo_var.set(self._desc_e.get().strip())
+        self._refresh_gl(total)
+
+    def _refresh_gl(self, total):
+        self._gltree.delete(*self._gltree.get_children())
+        if not total:
+            return
+        ac_code = self._ac_e.get().strip()
+        ac_name = self._ac_name_var.get()
+        party   = self._party_e.get().strip()
+        self._gl_rows(total, ac_code, ac_name or party)
+
+    def _gl_rows(self, total, ac_code, ac_name):
+        # Default (purchase): debit inventory, credit party
+        self._gltree.insert("", "end", values=(
+            "INV", "Inventory / Stock",
+            f"{total:,.2f}", ""), tags=("odd",))
+        self._gltree.insert("", "end", values=(
+            ac_code, ac_name, "", f"{total:,.2f}"), tags=("even",))
+
+    # ── F9 / FocusOut on A/C ──────────────────────────────────────────────────
 
     def _f9_ac(self, _event):
         dlg = AccountLOVDialog(self, self._ac_e.get().strip())
@@ -184,58 +264,36 @@ class _TransactionBase(BaseForm):
             self._ac_name_var.set(name)
             self._party_e.focus_set()
 
-    def _f9_inv(self, _event):
-        dlg = InventoryLOVDialog(self, self._le_code.get().strip())
-        if dlg.result:
-            code, name, unit, rate = dlg.result
-            self._le_code.delete(0, "end"); self._le_code.insert(0, code)
-            self._le_name.delete(0, "end"); self._le_name.insert(0, name)
-            self._le_rate.delete(0, "end"); self._le_rate.insert(0, f"{rate:.2f}")
-            self._le_qty.focus_set()
-
     def _lookup_ac(self, _):
         code = self._ac_e.get().strip()
-        if not code:
-            return
-        row = db.get_account(code)
-        if row:
-            self._ac_name_var.set(row["ac_name"])
-
-    def _lookup_inv(self, _):
-        code = self._le_code.get().strip()
-        if not code:
-            return
-        item = db.get_inventory_item(code)
-        if item:
-            self._le_name.delete(0, "end"); self._le_name.insert(0, item["name"])
-            if not self._le_rate.get().strip():
-                self._le_rate.delete(0, "end")
-                self._le_rate.insert(0, f"{item['last_purchase_rate']:.2f}")
-
-    def _calc_value(self, _):
-        val = _num(self._le_qty.get()) * _num(self._le_rate.get())
-        self._le_val.delete(0, "end")
-        self._le_val.insert(0, f"{val:.2f}")
+        if code:
+            row = db.get_account(code)
+            if row:
+                self._ac_name_var.set(row["ac_name"])
 
     # ── CRUD ───────────────────────────────────────────────────────────────────
 
     def on_add(self):
         self._current_inv = None
-        self._clear_form()
-        self._set_hdr_state("normal")
+        self._clear_header()
+        self._grid.reset()
+        self._set_hdr("normal")
         self._inv_e.configure(state="normal")
         self._inv_e.delete(0, "end")
         self._inv_e.insert(0, db.next_invoice_no(self._DB_NEXT))
         self._inv_e.configure(state="readonly")
+        self._total_var.set(""); self._amt_var.set("")
+        self._echo_var.set("")
         self._dated_e.focus_set()
         self._mode = "add"
 
     def on_edit(self):
         if not self._current_inv:
-            messagebox.showwarning("Edit", "Search and load a record first.", parent=self)
+            messagebox.showwarning("Edit", "Search a record first.", parent=self)
             return
-        self._set_hdr_state("normal")
+        self._set_hdr("normal")
         self._inv_e.configure(state="readonly")
+        self._grid.set_editable(True)
         self._mode = "edit"
 
     def on_delete(self):
@@ -246,10 +304,12 @@ class _TransactionBase(BaseForm):
                                f"Delete invoice {self._current_inv}?", parent=self):
             self._DB_DEL(self._current_inv)
             self._current_inv = None
-            self._clear_form()
+            self._clear_header()
+            self._grid.reset()
+            self._set_hdr("disabled")
 
     def on_search(self):
-        src = "purchase" if "PURCHASE" in self._TITLE else "sale"
+        src = "sale" if "SALES" in self._TITLE else "purchase"
         dlg = TransactionSearchDialog(self, source=src)
         if dlg.result:
             self._current_inv = dlg.result
@@ -266,24 +326,31 @@ class _TransactionBase(BaseForm):
             from datetime import datetime
             dt = datetime.strptime(dstr, "%d/%m/%Y").strftime("%Y-%m-%d")
         except ValueError:
-            messagebox.showerror("Date", "Use DD/MM/YYYY format.", parent=self)
-            return
-        if not self._lines:
-            messagebox.showwarning("Validation",
-                                   "Add at least one inventory line.", parent=self)
+            messagebox.showerror("Date", "Use DD/MM/YYYY.", parent=self)
             return
 
-        total  = sum(r[5] for r in self._lines)
+        rows = [r for r in self._grid.get_all_rows() if r.get("inv_code")]
+        if not rows:
+            messagebox.showwarning("Validation",
+                                   "Enter at least one inventory line.", parent=self)
+            return
+
+        total  = sum(_f(r.get("value", 0)) for r in rows)
         header = (inv_no, dt,
                   self._ac_e.get().strip(), self._ac_name_var.get(),
                   self._term_var.get(), self._party_e.get().strip(),
                   total, self._words_e.get().strip(),
                   self._desc_e.get().strip(), total)
-        lines  = [(inv_no, r[0], r[1], r[2], r[3], r[4], r[5])
-                  for r in self._lines]
+        lines  = [(inv_no, i+1,
+                   r["inv_code"], r.get("inv_name", ""),
+                   _f(r.get("quantity", 0)),
+                   _f(r.get("rate", 0)),
+                   _f(r.get("value", 0)))
+                  for i, r in enumerate(rows)]
         self._DB_SAVE(header, lines)
         self._current_inv = inv_no
-        self._set_hdr_state("disabled")
+        self._set_hdr("disabled")
+        self._grid.set_editable(False)
         self._mode = "view"
         messagebox.showinfo("Saved", f"Invoice {inv_no} saved.", parent=self)
 
@@ -291,77 +358,10 @@ class _TransactionBase(BaseForm):
         if self._current_inv:
             self._load_record(self._current_inv)
         else:
-            self._clear_form()
-        self._set_hdr_state("disabled")
+            self._clear_header()
+            self._grid.reset()
+            self._set_hdr("disabled")
         self._mode = "view"
-
-    # ── Lines ──────────────────────────────────────────────────────────────────
-
-    def _add_line(self):
-        code = self._le_code.get().strip()
-        name = self._le_name.get().strip() or code
-        qty  = _num(self._le_qty.get())
-        rate = _num(self._le_rate.get())
-        val  = _num(self._le_val.get()) or qty * rate
-        if not code:
-            messagebox.showwarning("Input", "Inventory Code required.", parent=self)
-            return
-        serial = len(self._lines) + 1
-        self._lines.append([serial, code, name, qty, rate, val])
-        self._render_lines()
-        for e in [self._le_code, self._le_name, self._le_qty,
-                  self._le_rate, self._le_val]:
-            e.delete(0, "end")
-        self._le_code.focus_set()
-
-    def _del_line(self):
-        sel = self._ltree.selection()
-        if not sel:
-            messagebox.showwarning("Delete", "Select a line first.", parent=self)
-            return
-        idx = self._ltree.index(sel[0])
-        del self._lines[idx]
-        for i, r in enumerate(self._lines):
-            r[0] = i + 1
-        self._render_lines()
-
-    def _on_line_sel(self, _):
-        sel = self._ltree.selection()
-        if not sel:
-            return
-        r = self._lines[self._ltree.index(sel[0])]
-        self._le_code.delete(0, "end");  self._le_code.insert(0, r[1])
-        self._le_name.delete(0, "end");  self._le_name.insert(0, r[2])
-        self._le_qty.delete(0, "end");   self._le_qty.insert(0, f"{r[3]:.2f}")
-        self._le_rate.delete(0, "end");  self._le_rate.insert(0, f"{r[4]:.2f}")
-        self._le_val.delete(0, "end");   self._le_val.insert(0, f"{r[5]:.2f}")
-
-    def _render_lines(self):
-        self._ltree.delete(*self._ltree.get_children())
-        total = 0.0
-        for i, r in enumerate(self._lines):
-            tag = "odd" if i % 2 else "even"
-            self._ltree.insert("", "end", values=(
-                r[0], r[1], r[2],
-                f"{r[3]:,.2f}", f"{r[4]:,.2f}", f"{r[5]:,.2f}"
-            ), tags=(tag,))
-            total += r[5]
-        self._total_var.set(f"{total:,.2f}")
-        self._amt_var.set(f"{total:,.2f}")
-        self._status_var.set(self._desc_e.get().strip())
-        self._update_gl(total)
-
-    def _update_gl(self, total):
-        self._gltree.delete(*self._gltree.get_children())
-        ac_code = self._ac_e.get().strip()
-        ac_name = self._ac_name_var.get()
-        party   = self._party_e.get().strip()
-        self._gltree.insert("", "end", values=(
-            "INV", "Inventory / Stock",
-            f"{total:,.2f}", ""), tags=("odd",))
-        self._gltree.insert("", "end", values=(
-            ac_code, ac_name or party, "",
-            f"{total:,.2f}"), tags=("even",))
 
     # ── Load / Clear ───────────────────────────────────────────────────────────
 
@@ -369,8 +369,8 @@ class _TransactionBase(BaseForm):
         hdr, lines = self._DB_GET(inv_no)
         if not hdr:
             return
-        self._clear_form(keep=True)
-        self._set_hdr_state("normal")
+        self._clear_header()
+        self._set_hdr("normal")
         self._inv_e.configure(state="normal")
         self._inv_e.delete(0, "end"); self._inv_e.insert(0, hdr["invoice_no"])
         self._inv_e.configure(state="readonly")
@@ -387,32 +387,31 @@ class _TransactionBase(BaseForm):
         self._party_e.delete(0, "end"); self._party_e.insert(0, hdr["party"] or "")
         self._words_e.delete(0, "end"); self._words_e.insert(0, hdr["in_words"] or "")
         self._desc_e.delete(0, "end");  self._desc_e.insert(0, hdr["description"] or "")
-        self._set_hdr_state("disabled")
-        self._lines = [[r["serial"], r["inv_code"], r["inventory_name"],
-                        r["quantity"], r["rate"], r["value"]] for r in lines]
-        self._render_lines()
+        self._set_hdr("disabled")
 
-    def _clear_form(self, keep=False):
-        self._lines = []
-        self._ltree.delete(*self._ltree.get_children())
-        self._gltree.delete(*self._gltree.get_children())
-        self._total_var.set(""); self._amt_var.set("")
-        self._status_var.set("")
-        for e in [self._inv_e, self._dated_e, self._ac_e,
-                  self._party_e, self._words_e, self._desc_e]:
+        row_data = [{"inv_code": r["inv_code"],
+                     "inv_name": r["inventory_name"],
+                     "quantity": f"{r['quantity']:,.2f}" if r["quantity"] else "",
+                     "rate":     f"{r['rate']:,.2f}" if r["rate"] else "",
+                     "value":    f"{r['value']:,.2f}" if r["value"] else ""}
+                    for r in lines]
+        self._grid.load_rows(row_data)
+        self._grid.set_editable(False)
+        self._update_total()
+
+    def _clear_header(self):
+        for e in [self._dated_e, self._ac_e, self._party_e,
+                  self._words_e, self._desc_e]:
             s = e.cget("state")
             e.configure(state="normal"); e.delete(0, "end")
-            if keep:
-                e.configure(state=s)
-        if not keep:
-            self._dated_e.insert(0, date.today().strftime("%d/%m/%Y"))
+            e.configure(state=s)
         self._ac_name_var.set("")
         self._term_var.set("CREDIT")
-        for e in [self._le_code, self._le_name, self._le_qty,
-                  self._le_rate, self._le_val]:
-            e.delete(0, "end")
+        self._dated_e.configure(state="normal")
+        self._dated_e.delete(0, "end")
+        self._dated_e.insert(0, date.today().strftime("%d/%m/%Y"))
 
-    def _set_hdr_state(self, state):
+    def _set_hdr(self, state):
         for e in [self._dated_e, self._ac_e, self._party_e,
                   self._words_e, self._desc_e]:
             e.configure(state=state)
@@ -448,13 +447,10 @@ class SalesTransactionsForm(_TransactionBase):
     _DB_ALL  = staticmethod(db.get_all_sales)
     _DB_NEXT = "sales_transactions"
 
-    def _update_gl(self, total):
-        self._gltree.delete(*self._gltree.get_children())
-        ac_code = self._ac_e.get().strip()
-        ac_name = self._ac_name_var.get()
-        party   = self._party_e.get().strip()
+    def _gl_rows(self, total, ac_code, ac_name):
+        # Sales: debit party, credit sales revenue
         self._gltree.insert("", "end", values=(
-            ac_code, ac_name or party,
+            ac_code, ac_name,
             f"{total:,.2f}", ""), tags=("odd",))
         self._gltree.insert("", "end", values=(
             "SALES", "Sales Revenue", "",
