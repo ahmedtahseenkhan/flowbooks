@@ -17,13 +17,17 @@ from config import *
 # ── Late imports (avoid circular deps) ────────────────────────────────────────
 
 def _import_forms():
-    from forms.chart_of_accounts  import ChartOfAccounts, DefineHeadingAccounts
-    from forms.inventory_master    import InventoryMaster
-    from forms.inventory_heads     import InventoryHeads
-    from forms.journal_voucher     import JournalVoucher
-    from forms.purchase_form       import PurchaseTransactionsForm, SalesTransactionsForm
-    from forms.opening_balances    import OpeningBalancesForm
-    from forms.currency_form       import CurrencyTransactionForm, ValueAdjustmentForm
+    from forms.chart_of_accounts   import ChartOfAccounts, DefineHeadingAccounts
+    from forms.inventory_master     import InventoryMaster
+    from forms.inventory_heads      import InventoryHeads
+    from forms.journal_voucher      import JournalVoucher
+    from forms.purchase_form        import PurchaseTransactionsForm, SalesTransactionsForm
+    from forms.opening_balances     import OpeningBalancesForm
+    from forms.user_management      import UserManagementForm
+    from forms.inventory_transactions import (
+        OpeningTransactionsForm, CarryTransactionForm,
+        CurrencyTransactionForm, ValueAdjustmentForm,
+        AutoValueAdjustForm, ValueAdditionDeletionForm)
     from forms.reports.general_ledger import (
         open_general_ledger, open_daily_transactions, open_trial_balance,
         open_screen_ledger, open_account_ledger_detail,
@@ -161,37 +165,42 @@ class MainWindow(tk.Tk):
         m3.add_command(label="Inventory Heads",                   command=lambda: self._open(self._forms["InventoryHeads"]))
         m3.add_command(label="Inventory Master",                  command=lambda: self._open(self._forms["InventoryMaster"]))
 
-        # ── Inventory Transactions
+        # ── Inventory Transactions  (exact match to design image)
         m4 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Inventory Transactions", menu=m4)
-        m4.add_command(label="Opening Transactions Form / OTF",    command=lambda: self._open(self._forms["OpeningBalancesForm"]))
-        m4.add_command(label="Currency Transaction Form / CTF",    command=lambda: self._open(self._forms["CurrencyTransactionForm"]))
-        m4.add_command(label="Purchases Transactions Form / PTF",  command=lambda: self._open(self._forms["PurchaseTransactionsForm"]))
-        m4.add_command(label="Sales Transactions Form / STF",      command=lambda: self._open(self._forms["SalesTransactionsForm"]))
-        m4.add_command(label="Value Adjustment Form / VAF",        command=lambda: self._open(self._forms["ValueAdjustmentForm"]))
+        m4.add_command(label="Opening Transactions Form / OTF",      command=lambda: self._open(self._forms["OpeningTransactionsForm"]))
+        m4.add_command(label="Currency Transaction Form / CTF",      command=lambda: self._open(self._forms["CurrencyTransactionForm"]))
+        m4.add_command(label="Purchases Transactions Form / PTF",    command=lambda: self._open(self._forms["PurchaseTransactionsForm"]))
+        m4.add_command(label="Sales Transactions Form / STF",        command=lambda: self._open(self._forms["SalesTransactionsForm"]))
+        m4.add_command(label="Carry Transaction Form / CHF",         command=lambda: self._open(self._forms["CarryTransactionForm"]))
+        m4.add_command(label="Value Adjustment Form / VAF",          command=lambda: self._open(self._forms["ValueAdjustmentForm"]))
+        m4.add_command(label="Auto Value Adjustment / AVADJ",        command=lambda: self._open(self._forms["AutoValueAdjustForm"]))
+        m4.add_command(label="Value Addition/Deletion Form / VADF",  command=lambda: self._open(self._forms["ValueAdditionDeletionForm"]))
         m4.add_separator()
-        m4.add_command(label="Inventory Ledger Reports / ILR",     command=lambda: self._forms["open_inventory_ledger"](self))
-        m4.add_command(label="Inventory Activity Report / IAR",    command=lambda: self._forms["open_inventory_activity"](self))
-        m4.add_command(label="Inv. Wise Account Activity / IWAA",  command=lambda: self._forms["open_inv_wise_account"](self))
-        m4.add_command(label="Inventory Stock Report / ISR",       command=lambda: self._forms["open_inventory_stock"](self))
+        m4.add_command(label="Inventory Ledger Reports / ILR",       command=lambda: self._forms["open_inventory_ledger"](self))
+        m4.add_command(label="Inventory Activity Report / IAR",      command=lambda: self._forms["open_inventory_activity"](self))
+        m4.add_command(label="Inv. Wise Account Activity / IWAA",    command=lambda: self._forms["open_inv_wise_account"](self))
+        m4.add_command(label="Inventory Stock Report / ISR",         command=lambda: self._forms["open_inventory_stock"](self))
         m4.add_command(label="Daily Detail Inv Transactions / DDIT", command=lambda: self._forms["open_daily_detail_inv"](self))
-        m4.add_command(label="Daily Inv Transactions Smry / DITS", command=lambda: self._forms["open_daily_inv_summary"](self))
+        m4.add_command(label="Daily Inv Transactions Smry / DITS",   command=lambda: self._forms["open_daily_inv_summary"](self))
 
         # ── Management Information
         m5 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Management Information", menu=m5)
-        m5.add_command(label="Balance Sheet",                     command=lambda: self._forms["open_balance_sheet"](self))
-        m5.add_command(label="Profit & Loss Statement",           command=lambda: self._forms["open_profit_loss"](self))
+        m5.add_command(label="Balance Sheet",                        command=lambda: self._forms["open_balance_sheet"](self))
+        m5.add_command(label="Profit & Loss Statement",              command=lambda: self._forms["open_profit_loss"](self))
         m5.add_separator()
-        m5.add_command(label="General Ledger Report / GLR",       command=lambda: self._forms["open_general_ledger"](self))
-        m5.add_command(label="General Ledger Detail / GLD",       command=lambda: self._forms["open_account_ledger_detail"](self))
-        m5.add_command(label="Trial Balance / TB",                command=lambda: self._forms["open_trial_balance"](self))
-        m5.add_command(label="Inventory Stock Report / ISR",      command=lambda: self._forms["open_inventory_stock"](self))
+        m5.add_command(label="General Ledger Report / GLR",          command=lambda: self._forms["open_general_ledger"](self))
+        m5.add_command(label="General Ledger Detail / GLD",          command=lambda: self._forms["open_account_ledger_detail"](self))
+        m5.add_command(label="Trial Balance / TB",                   command=lambda: self._forms["open_trial_balance"](self))
+        m5.add_command(label="Detailed Trial Balance / DTB",         command=lambda: self._forms["open_trial_balance"](self))
+        m5.add_command(label="Inventory Stock Report / ISR",         command=lambda: self._forms["open_inventory_stock"](self))
 
         # ── Administration
         m6 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Administration", menu=m6)
-        m6.add_command(label="User Profile",                      command=self._show_user_profile)
+        m6.add_command(label="User Management",                      command=lambda: self._open(self._forms["UserManagementForm"]))
+        m6.add_command(label="User Profile",                         command=self._show_user_profile)
 
         mb.add_command(label="Exit", command=self._on_exit)
 
@@ -256,17 +265,21 @@ class MainWindow(tk.Tk):
                 ("Inventory Master",                   lambda: self._open(self._forms["InventoryMaster"])),
             ]),
             ("Inventory Transactions", "#4C6890", [
+                ("Opening Transactions / OTF",         lambda: self._open(self._forms["OpeningTransactionsForm"])),
                 ("Currency Transaction / CTF",         lambda: self._open(self._forms["CurrencyTransactionForm"])),
                 ("Purchases Transactions / PTF",       lambda: self._open(self._forms["PurchaseTransactionsForm"])),
                 ("Sales Transactions / STF",           lambda: self._open(self._forms["SalesTransactionsForm"])),
+                ("Carry Transaction / CHF",            lambda: self._open(self._forms["CarryTransactionForm"])),
                 ("Value Adjustment / VAF",             lambda: self._open(self._forms["ValueAdjustmentForm"])),
-                ("Inventory Stock Report / ISR",       lambda: self._forms["open_inventory_stock"](self)),
-                ("Inventory Ledger Reports / ILR",     lambda: self._forms["open_inventory_ledger"](self)),
-                ("Inventory Activity Report / IAR",    lambda: self._forms["open_inventory_activity"](self)),
+                ("Auto Value Adjustment / AVADJ",      lambda: self._open(self._forms["AutoValueAdjustForm"])),
+                ("Value Addition/Deletion / VADF",     lambda: self._open(self._forms["ValueAdditionDeletionForm"])),
             ]),
             ("Management Information", "#4C6890", [
                 ("Balance Sheet",                      lambda: self._forms["open_balance_sheet"](self)),
                 ("Profit & Loss Statement",            lambda: self._forms["open_profit_loss"](self)),
+                ("General Ledger Report / GLR",        lambda: self._forms["open_general_ledger"](self)),
+                ("Account Ledger Detail / GLD",        lambda: self._forms["open_account_ledger_detail"](self)),
+                ("Trial Balance / TB",                 lambda: self._forms["open_trial_balance"](self)),
                 ("Inventory Stock Report / ISR",       lambda: self._forms["open_inventory_stock"](self)),
             ]),
         ]
