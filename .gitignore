@@ -16,3 +16,4 @@ keys/
 build/
 dist/
 *.spec
+Designs/
