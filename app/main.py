@@ -26,11 +26,15 @@ def _import_forms():
     from forms.journal_voucher     import JournalVoucher
     from forms.purchase_form       import PurchaseTransactionsForm, SalesTransactionsForm
     from forms.opening_balances    import OpeningBalancesForm
-    from forms.reports.general_ledger import (open_general_ledger, open_daily_transactions,
-                                               open_trial_balance, open_screen_ledger)
-    from forms.reports.inventory_reports import (open_inventory_stock, open_inventory_ledger,
-                                                  open_inventory_activity, open_inv_wise_account,
-                                                  open_daily_detail_inv, open_daily_inv_summary)
+    from forms.currency_form       import CurrencyTransactionForm, ValueAdjustmentForm
+    from forms.reports.general_ledger import (
+        open_general_ledger, open_daily_transactions, open_trial_balance,
+        open_screen_ledger, open_account_ledger_detail,
+        open_balance_sheet, open_profit_loss)
+    from forms.reports.inventory_reports import (
+        open_inventory_stock, open_inventory_ledger,
+        open_inventory_activity, open_inv_wise_account,
+        open_daily_detail_inv, open_daily_inv_summary)
     return locals()
 
 
@@ -149,7 +153,7 @@ class MainWindow(tk.Tk):
         m2.add_separator()
         m2.add_command(label="Daily General Transactions / DGT",   command=lambda: self._forms["open_daily_transactions"](self))
         m2.add_command(label="General Ledger Report / GLR",        command=lambda: self._forms["open_general_ledger"](self))
-        m2.add_command(label="General Ledger Detail / GLD",        command=lambda: self._forms["open_screen_ledger"](self))
+        m2.add_command(label="General Ledger Detail / GLD",        command=lambda: self._forms["open_account_ledger_detail"](self))
         m2.add_command(label="Screen Ledger / SCR_LGR",            command=lambda: self._forms["open_screen_ledger"](self))
         m2.add_command(label="Trial Balance / TB",                  command=lambda: self._forms["open_trial_balance"](self))
         m2.add_command(label="Detailed Trial Balance / DTB",        command=lambda: self._forms["open_trial_balance"](self))
@@ -164,8 +168,10 @@ class MainWindow(tk.Tk):
         m4 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Inventory Transactions", menu=m4)
         m4.add_command(label="Opening Transactions Form / OTF",    command=lambda: self._open(self._forms["OpeningBalancesForm"]))
+        m4.add_command(label="Currency Transaction Form / CTF",    command=lambda: self._open(self._forms["CurrencyTransactionForm"]))
         m4.add_command(label="Purchases Transactions Form / PTF",  command=lambda: self._open(self._forms["PurchaseTransactionsForm"]))
         m4.add_command(label="Sales Transactions Form / STF",      command=lambda: self._open(self._forms["SalesTransactionsForm"]))
+        m4.add_command(label="Value Adjustment Form / VAF",        command=lambda: self._open(self._forms["ValueAdjustmentForm"]))
         m4.add_separator()
         m4.add_command(label="Inventory Ledger Reports / ILR",     command=lambda: self._forms["open_inventory_ledger"](self))
         m4.add_command(label="Inventory Activity Report / IAR",    command=lambda: self._forms["open_inventory_activity"](self))
@@ -177,12 +183,13 @@ class MainWindow(tk.Tk):
         # ── Management Information
         m5 = tk.Menu(mb, tearoff=0)
         mb.add_cascade(label="Management Information", menu=m5)
-        m5.add_command(label="Balance Sheet",                     command=lambda: self._forms["open_trial_balance"](self))
-        m5.add_command(label="Profit & Loss Statement",           command=lambda: self._forms["open_general_ledger"](self))
+        m5.add_command(label="Balance Sheet",                     command=lambda: self._forms["open_balance_sheet"](self))
+        m5.add_command(label="Profit & Loss Statement",           command=lambda: self._forms["open_profit_loss"](self))
         m5.add_separator()
-        m5.add_command(label="General Ledger Report",             command=lambda: self._forms["open_general_ledger"](self))
-        m5.add_command(label="Trial Balance",                     command=lambda: self._forms["open_trial_balance"](self))
-        m5.add_command(label="Inventory Stock Report",            command=lambda: self._forms["open_inventory_stock"](self))
+        m5.add_command(label="General Ledger Report / GLR",       command=lambda: self._forms["open_general_ledger"](self))
+        m5.add_command(label="General Ledger Detail / GLD",       command=lambda: self._forms["open_account_ledger_detail"](self))
+        m5.add_command(label="Trial Balance / TB",                command=lambda: self._forms["open_trial_balance"](self))
+        m5.add_command(label="Inventory Stock Report / ISR",      command=lambda: self._forms["open_inventory_stock"](self))
 
         # ── Administration
         m6 = tk.Menu(mb, tearoff=0)
@@ -243,6 +250,7 @@ class MainWindow(tk.Tk):
                 ("Journal Voucher Form / JVF",         lambda: self._open(self._forms["JournalVoucher"])),
                 ("Daily General Transactions / DGT",   lambda: self._forms["open_daily_transactions"](self)),
                 ("General Ledger Report / GLR",        lambda: self._forms["open_general_ledger"](self)),
+                ("General Ledger Detail / GLD",        lambda: self._forms["open_account_ledger_detail"](self)),
                 ("Screen Ledger / SCR_LGR",            lambda: self._forms["open_screen_ledger"](self)),
                 ("Trial Balance / TB",                 lambda: self._forms["open_trial_balance"](self)),
             ]),
@@ -251,13 +259,18 @@ class MainWindow(tk.Tk):
                 ("Inventory Master",                   lambda: self._open(self._forms["InventoryMaster"])),
             ]),
             ("Inventory Transactions", "#4C6890", [
+                ("Currency Transaction / CTF",         lambda: self._open(self._forms["CurrencyTransactionForm"])),
                 ("Purchases Transactions / PTF",       lambda: self._open(self._forms["PurchaseTransactionsForm"])),
                 ("Sales Transactions / STF",           lambda: self._open(self._forms["SalesTransactionsForm"])),
+                ("Value Adjustment / VAF",             lambda: self._open(self._forms["ValueAdjustmentForm"])),
                 ("Inventory Stock Report / ISR",       lambda: self._forms["open_inventory_stock"](self)),
                 ("Inventory Ledger Reports / ILR",     lambda: self._forms["open_inventory_ledger"](self)),
                 ("Inventory Activity Report / IAR",    lambda: self._forms["open_inventory_activity"](self)),
-                ("Daily Detail Inv Trans / DDIT",      lambda: self._forms["open_daily_detail_inv"](self)),
-                ("Daily Inv Trans Summary / DITS",     lambda: self._forms["open_daily_inv_summary"](self)),
+            ]),
+            ("Management Information", "#4C6890", [
+                ("Balance Sheet",                      lambda: self._forms["open_balance_sheet"](self)),
+                ("Profit & Loss Statement",            lambda: self._forms["open_profit_loss"](self)),
+                ("Inventory Stock Report / ISR",       lambda: self._forms["open_inventory_stock"](self)),
             ]),
         ]
 
