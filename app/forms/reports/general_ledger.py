@@ -292,9 +292,9 @@ def open_balance_sheet(master, username="ADMIN"):
     LIAB_TYPES  = {"CURRENT LIABILITIES", "LONG TERM LIABILITIES"}
     EQ_TYPES    = {"EQUITY"}
 
-    assets = [r for r in rows if (r.get("ac_type") or "") in ASSET_TYPES]
-    liabs  = [r for r in rows if (r.get("ac_type") or "") in LIAB_TYPES]
-    equity = [r for r in rows if (r.get("ac_type") or "") in EQ_TYPES]
+    assets = [r for r in rows if (r["ac_type"] or "") in ASSET_TYPES]
+    liabs  = [r for r in rows if (r["ac_type"] or "") in LIAB_TYPES]
+    equity = [r for r in rows if (r["ac_type"] or "") in EQ_TYPES]
 
     total_assets  = sum(r["balance"] for r in assets)
     total_liabs   = sum(r["balance"] for r in liabs)
@@ -363,8 +363,8 @@ def open_profit_loss(master, username="ADMIN"):
     INCOME_TYPES  = {"INCOME"}
     EXPENSE_TYPES = {"EXPENSE", "COST OF GOODS SOLD"}
 
-    income   = [r for r in rows if (r.get("ac_type") or "") in INCOME_TYPES]
-    expenses = [r for r in rows if (r.get("ac_type") or "") in EXPENSE_TYPES]
+    income   = [r for r in rows if (r["ac_type"] or "") in INCOME_TYPES]
+    expenses = [r for r in rows if (r["ac_type"] or "") in EXPENSE_TYPES]
 
     total_income   = sum(r["total_credit"] for r in income)
     total_expenses = sum(r["total_debit"]  for r in expenses)

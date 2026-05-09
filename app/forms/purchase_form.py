@@ -90,8 +90,12 @@ class _TransactionBase(BaseForm):
 
         tk.Label(hp, text="A/C", **lkw).grid(
             row=0, column=4, sticky="e", padx=(6,2), pady=4)
-        self._ac_e = tk.Entry(hp, width=9, **tkw)
-        self._ac_e.grid(row=0, column=5, sticky="w", padx=2, pady=4)
+        # A/C code + LOV button in a mini-frame so they stay together
+        ac_frame = tk.Frame(hp, bg=FORM_BG)
+        ac_frame.grid(row=0, column=5, sticky="w", padx=2, pady=4)
+        self._ac_e = tk.Entry(ac_frame, width=9, **tkw)
+        self._ac_e.pack(side="left")
+        lov_button(ac_frame, self._f9_ac).pack(side="left", padx=2)
 
         tk.Label(hp, text="Name", **lkw).grid(
             row=0, column=6, sticky="e", padx=(4,2), pady=4)
@@ -143,7 +147,6 @@ class _TransactionBase(BaseForm):
         # F9 / FocusOut on A/C field
         self._ac_e.bind("<F9>",       self._f9_ac)
         self._ac_e.bind("<FocusOut>", self._lookup_ac)
-        lov_button(hp, self._f9_ac).grid(row=0, column=6, padx=(0,2), pady=4)
 
         # ── Inventory grid hint + LOV button ──────────────────────────────────
         gh = tk.Frame(c, bg="#DDE4EE")
