@@ -68,7 +68,7 @@ class OpeningTransactionsForm(BaseForm):
         # Inline grid
         gh = tk.Frame(c, bg="#DDE4EE")
         gh.pack(fill="x", padx=10)
-        tk.Label(gh, text="💡 InvCode: double-click or F9 to search",
+        tk.Label(gh, text="[F9] InvCode: double-click or F9 to search",
                  bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
         lov_button(gh, self._open_inv_lov).pack(side="left", padx=4)
         self._grid = InlineEntryGrid(c, OTF_COLS, start_rows=10)
@@ -267,7 +267,7 @@ class CarryTransactionForm(BaseForm):
 
         gh = tk.Frame(c, bg="#DDE4EE")
         gh.pack(fill="x", padx=10)
-        tk.Label(gh, text="💡 InvCode: double-click or F9 to search",
+        tk.Label(gh, text="[F9] InvCode: double-click or F9 to search",
                  bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
         lov_button(gh, self._open_inv_lov).pack(side="left", padx=4)
         self._grid = InlineEntryGrid(c, CHF_COLS, start_rows=10)
@@ -864,7 +864,7 @@ class CurrencyTransactionForm(BaseForm):
 
         gh = tk.Frame(c, bg="#DDE4EE")
         gh.pack(fill="x", padx=10)
-        tk.Label(gh, text="💡 Inv Code/Currency: double-click or F9 to search",
+        tk.Label(gh, text="[F9] Inv Code/Currency: double-click or F9 to search",
                  bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
         lov_button(gh, self._open_inv_lov).pack(side="left", padx=4)
         self._grid = InlineEntryGrid(c, CTF_COLS, start_rows=10)

@@ -93,7 +93,7 @@ class JournalVoucher(BaseForm):
         # ── Grid hint bar ─────────────────────────────────────────────────────
         gh = tk.Frame(c, bg="#DDE4EE")
         gh.pack(fill="x", padx=10)
-        tk.Label(gh, text="💡 A/C Code: type code OR double-click/F9 to search accounts",
+        tk.Label(gh, text="[F9] A/C Code: type code OR double-click/F9 to search accounts",
                  bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
         lov_button(gh, lambda: self._open_ac_lov()).pack(side="left", padx=4)
         tk.Label(gh, text="Search Account", bg="#DDE4EE", fg="#334466",

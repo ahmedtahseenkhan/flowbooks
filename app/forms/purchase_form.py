@@ -109,8 +109,12 @@ class _TransactionBase(BaseForm):
         tk.Label(hp, text="Term", **lkw).grid(
             row=1, column=0, sticky="e", padx=(8,2), pady=4)
         self._term_var = tk.StringVar(value="CREDIT")
-        tk.OptionMenu(hp, self._term_var, "CREDIT", "CASH").grid(
-            row=1, column=1, sticky="w", padx=2, pady=4)
+        om = tk.OptionMenu(hp, self._term_var, "CREDIT", "CASH")
+        om.config(bg=ENTRY_BG, fg="black", font=FONT_NORMAL,
+                  relief="sunken", bd=2, highlightthickness=0,
+                  activebackground=GRID_HDR_BG, activeforeground="white")
+        om["menu"].config(bg=ENTRY_BG, fg="black", font=FONT_NORMAL)
+        om.grid(row=1, column=1, sticky="w", padx=2, pady=4)
 
         tk.Label(hp, text="Party", **lkw).grid(
             row=1, column=2, sticky="e", padx=(6,2), pady=4)
@@ -151,7 +155,7 @@ class _TransactionBase(BaseForm):
         # ── Inventory grid hint + LOV button ──────────────────────────────────
         gh = tk.Frame(c, bg="#DDE4EE")
         gh.pack(fill="x", padx=8)
-        tk.Label(gh, text="💡 InvCode: type code OR double-click/F9 to search",
+        tk.Label(gh, text="[F9] InvCode: type code OR double-click/F9 to search",
                  bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
         lov_button(gh, lambda: self._open_inv_lov()).pack(side="left", padx=4)
         tk.Label(gh, text="Search Inventory", bg="#DDE4EE", fg="#334466",

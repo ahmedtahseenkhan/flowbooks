@@ -559,12 +559,13 @@ def make_grid(parent, columns, height=12, selectmode="browse"):
 
 
 def lov_button(parent, command, tooltip="F9 – List of Values"):
-    """Small ▼ button that opens a LOV popup. Place next to any code Entry."""
-    btn = tk.Button(parent, text="▼", command=command,
+    """Small [...] button that opens a LOV search popup."""
+    btn = tk.Button(parent, text="...", command=command,
                     bg=GRID_HDR_BG, fg="white",
-                    font=("Arial", 7, "bold"),
-                    relief="raised", bd=1,
-                    padx=2, pady=0, cursor="hand2")
+                    font=("Arial", 8, "bold"),
+                    relief="raised", bd=2,
+                    padx=3, pady=1, cursor="hand2",
+                    activebackground=BOTTOM_BAR, activeforeground="white")
     btn.bind("<Enter>", lambda e: btn.configure(bg=BOTTOM_BAR))
     btn.bind("<Leave>", lambda e: btn.configure(bg=GRID_HDR_BG))
     return btn
@@ -624,30 +625,46 @@ class InlineEntryGrid(tk.Frame):
     # ── Layout ────────────────────────────────────────────────────────────────
 
     def _build(self):
-        # Scrollable body first so scrollbar width is known
-        body = tk.Frame(self, bg=FORM_BG)
-        body.pack(fill="both", expand=True)
-        self._canvas = tk.Canvas(body, bg=GRID_ROW1, highlightthickness=0)
-        vsb = tk.Scrollbar(body, orient="vertical", command=self._canvas.yview)
-        self._canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side="right", fill="y")
-        self._canvas.pack(side="left", fill="both", expand=True)
+        """
+        Layout structure:
+          outer (Frame, fill=both)
+          ├── vsb  (Scrollbar, side=right, fill=y)
+          └── content (Frame, side=left, fill=both, expand=True)
+              ├── hdr  (Frame, fill=x)     ← same width as canvas ✓
+              └── canvas (Canvas, fill=both, expand=True)
 
-        # Header bar — must be placed AFTER scrollbar to match widths exactly
-        # Use FONT_GRID (same as entries) so character widths match perfectly
-        hdr = tk.Frame(self, bg=GRID_HDR_BG, height=self.ROW_H + 2)
-        hdr.pack(fill="x", before=body)   # place above body
+        Putting header and canvas inside the same `content` frame
+        guarantees pixel-perfect column alignment — no scrollbar
+        width calculation needed.
+        """
+        outer = tk.Frame(self, bg=FORM_BG)
+        outer.pack(fill="both", expand=True)
+
+        # Scrollbar on the right of outer
+        vsb = tk.Scrollbar(outer, orient="vertical")
+        vsb.pack(side="right", fill="y")
+
+        # Content frame: header + canvas share the same width automatically
+        content = tk.Frame(outer, bg=FORM_BG)
+        content.pack(side="left", fill="both", expand=True)
+
+        # ── Header row ────────────────────────────────────────────────────────
+        hdr = tk.Frame(content, bg=GRID_HDR_BG, height=self.ROW_H + 2)
+        hdr.pack(fill="x")
         hdr.pack_propagate(False)
         for col in self._cols:
             anchor = "e" if col.get("align") == "right" else "w"
-            tk.Label(hdr, text=col["header"], bg=GRID_HDR_BG, fg=GRID_HDR_FG,
-                     font=FONT_GRID,           # same font as entries → pixel-perfect alignment
+            tk.Label(hdr, text=col["header"],
+                     bg=GRID_HDR_BG, fg=GRID_HDR_FG,
+                     font=FONT_GRID,        # same font as entries
                      width=col["width"],
                      anchor=anchor).pack(side="left", padx=1)
-        # Reserve exact scrollbar width
-        vsb.update_idletasks()
-        sb_w = vsb.winfo_reqwidth() if vsb.winfo_reqwidth() > 0 else 17
-        tk.Frame(hdr, bg=GRID_HDR_BG, width=sb_w).pack(side="right")
+
+        # ── Scrollable canvas ─────────────────────────────────────────────────
+        self._canvas = tk.Canvas(content, bg=GRID_ROW1, highlightthickness=0)
+        self._canvas.pack(fill="both", expand=True)
+        self._canvas.configure(yscrollcommand=vsb.set)
+        vsb.configure(command=self._canvas.yview)
 
         self._inner = tk.Frame(self._canvas, bg=GRID_ROW1)
         self._cwin  = self._canvas.create_window((0, 0), window=self._inner, anchor="nw")
