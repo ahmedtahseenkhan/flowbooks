@@ -5,6 +5,7 @@ from tkinter import messagebox
 from config import *
 from forms.base_form import BaseForm, AccountLOVDialog
 import database as db
+from forms.base_form import lov_button
 
 SHORTCUTS = (
     "Alt+D : Delete Record    Alt+A : Add Record    Alt+E : Edit Record    "
@@ -82,6 +83,15 @@ class ChartOfAccounts(BaseForm):
                                 relief="sunken", bd=2)
         self._path_e.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(4,10), pady=6)
 
+        # Row 2b: A/C Type (for Balance Sheet / P&L classification)
+        tk.Label(panel, text="A/C Type", bg=FORM_BG, fg=LABEL_FG, font=FONT_BOLD,
+                 width=10, anchor="e").grid(row=2, column=2, sticky="e", padx=4, pady=6)
+        self._ac_type_var = tk.StringVar(value="EXPENSE")
+        type_opts = db.get_account_types()
+        self._ac_type_om = tk.OptionMenu(panel, self._ac_type_var, *type_opts)
+        self._ac_type_om.config(bg=ENTRY_BG, font=FONT_SMALL, anchor="w")
+        self._ac_type_om.grid(row=2, column=3, sticky="ew", padx=(4,10), pady=6)
+
         # Row 3: Opening | Balance
         inner = tk.Frame(panel, bg=FORM_BG, bd=1, relief="groove")
         inner.grid(row=3, column=0, columnspan=4, sticky="ew", padx=10, pady=(4,10))
@@ -153,6 +163,8 @@ class ChartOfAccounts(BaseForm):
         self._balance_e.delete(0, "end")
         self._balance_e.insert(0, f"{row['balance']:,.2f}")
         self._balance_e.configure(state="readonly")
+        self._ac_type_var.set(row["ac_type"] or "EXPENSE")
+        self._ac_type_om.configure(state="disabled")
         self._ac_code_e.configure(state="disabled")
         self._set_fields_state("disabled")
         try:
@@ -169,6 +181,7 @@ class ChartOfAccounts(BaseForm):
         self._idx = -1
         self._clear_fields()
         self._set_fields_state("normal")
+        self._ac_type_om.configure(state="normal")
         self._balance_e.configure(state="readonly")
         self._ac_code_e.focus_set()
         self._mode = "add"
@@ -179,6 +192,7 @@ class ChartOfAccounts(BaseForm):
             messagebox.showwarning("Edit", "Search and load a record first.", parent=self)
             return
         self._set_fields_state("normal")
+        self._ac_type_om.configure(state="normal")
         self._ac_code_e.configure(state="disabled")
         self._balance_e.configure(state="readonly")
         self._mode = "edit"
@@ -214,8 +228,10 @@ class ChartOfAccounts(BaseForm):
                 self._head_code_e.get().strip(),
                 self._head_name_e.get().strip(),
                 self._path_e.get().strip(),
-                opening, opening)
+                opening, opening,
+                self._ac_type_var.get())
         db.save_account(data)
+        self._ac_type_om.configure(state="disabled")
         self._current_code = code
         self._load_all_codes()
         self._load_record(code)

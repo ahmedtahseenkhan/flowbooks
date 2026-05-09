@@ -89,7 +89,8 @@ def init_db():
             head_name TEXT,
             ac_path TEXT,
             opening REAL DEFAULT 0,
-            balance REAL DEFAULT 0
+            balance REAL DEFAULT 0,
+            ac_type TEXT DEFAULT 'EXPENSE'
         );
 
         CREATE TABLE IF NOT EXISTS inventory_items (
@@ -277,10 +278,24 @@ def search_accounts(term, by="code"):
         return conn.execute("SELECT * FROM chart_of_accounts WHERE ac_name LIKE ? ORDER BY ac_name", (f"%{term}%",)).fetchall()
 
 def save_account(data):
+    """data = (ac_code, ac_name, head_code, head_name, ac_path, opening, balance[, ac_type])"""
     with get_connection() as conn:
-        conn.execute("""INSERT OR REPLACE INTO chart_of_accounts
-            (ac_code, ac_name, head_code, head_name, ac_path, opening, balance) VALUES (?,?,?,?,?,?,?)""", data)
+        if len(data) >= 8:
+            conn.execute("""INSERT OR REPLACE INTO chart_of_accounts
+                (ac_code, ac_name, head_code, head_name, ac_path, opening, balance, ac_type)
+                VALUES (?,?,?,?,?,?,?,?)""", data[:8])
+        else:
+            conn.execute("""INSERT OR REPLACE INTO chart_of_accounts
+                (ac_code, ac_name, head_code, head_name, ac_path, opening, balance)
+                VALUES (?,?,?,?,?,?,?)""", data[:7])
         conn.commit()
+
+def get_account_types():
+    return [
+        'CURRENT ASSETS', 'FIXED ASSETS',
+        'CURRENT LIABILITIES', 'LONG TERM LIABILITIES',
+        'EQUITY', 'INCOME', 'COST OF GOODS SOLD', 'EXPENSE',
+    ]
 
 def delete_account(ac_code):
     with get_connection() as conn:
@@ -467,6 +482,37 @@ def delete_sale(invoice_no):
         conn.execute("DELETE FROM sales_transactions WHERE invoice_no=?", (invoice_no,))
         conn.commit()
 
+def check_stock_for_sale(lines, existing_invoice_no=None):
+    """Return list of (inv_code, name, available, requested) where stock is insufficient."""
+    shortfalls = []
+    with get_connection() as conn:
+        for ln in lines:
+            inv_code = ln.get("inv_code") or (ln[2] if isinstance(ln, (list, tuple)) else None)
+            req_qty  = ln.get("quantity") or (ln[4] if isinstance(ln, (list, tuple)) else 0)
+            try:
+                req_qty = float(str(req_qty).replace(',', '') or 0)
+            except ValueError:
+                req_qty = 0
+            if not inv_code or req_qty <= 0:
+                continue
+            item = conn.execute(
+                "SELECT quantity, name FROM inventory_items WHERE code=?", (inv_code,)
+            ).fetchone()
+            if not item:
+                continue
+            available = item["quantity"]
+            # If updating existing invoice, add back what was already sold on it
+            if existing_invoice_no:
+                old = conn.execute(
+                    "SELECT COALESCE(SUM(quantity),0) q FROM sales_lines "
+                    "WHERE invoice_no=? AND inv_code=?",
+                    (existing_invoice_no, inv_code)
+                ).fetchone()
+                available += (old["q"] or 0)
+            if req_qty > available:
+                shortfalls.append((inv_code, item["name"], available, req_qty))
+    return shortfalls
+
 # ── Opening Balances ───────────────────────────────────────────────────────────
 
 def get_opening_balances(dated=None):
@@ -476,12 +522,37 @@ def get_opening_balances(dated=None):
         return conn.execute("SELECT * FROM opening_balances ORDER BY dated DESC, ac_code").fetchall()
 
 def save_opening_balance(data):
+    """data = (ac_code, ac_name, debit, credit, dated)
+    Also posts the net amount to chart_of_accounts.opening and balance."""
+    ac_code, ac_name, debit, credit, dated = data
     with get_connection() as conn:
-        conn.execute("INSERT INTO opening_balances (ac_code, ac_name, debit, credit, dated) VALUES (?,?,?,?,?)", data)
+        conn.execute("INSERT INTO opening_balances (ac_code, ac_name, debit, credit, dated) VALUES (?,?,?,?,?)",
+                     data)
+        # Post net opening to account: debit increases balance, credit decreases
+        net = (debit or 0) - (credit or 0)
+        existing = conn.execute(
+            "SELECT opening FROM chart_of_accounts WHERE ac_code=?", (ac_code,)
+        ).fetchone()
+        if existing:
+            new_opening = (existing["opening"] or 0) + net
+            conn.execute(
+                "UPDATE chart_of_accounts SET opening=?, balance=balance+? WHERE ac_code=?",
+                (new_opening, net, ac_code)
+            )
         conn.commit()
 
 def delete_opening_balance(row_id):
     with get_connection() as conn:
+        # Reverse the posted amount before deleting
+        row = conn.execute(
+            "SELECT ac_code, debit, credit FROM opening_balances WHERE id=?", (row_id,)
+        ).fetchone()
+        if row:
+            net = (row["debit"] or 0) - (row["credit"] or 0)
+            conn.execute(
+                "UPDATE chart_of_accounts SET opening=opening-?, balance=balance-? WHERE ac_code=?",
+                (net, net, row["ac_code"])
+            )
         conn.execute("DELETE FROM opening_balances WHERE id=?", (row_id,))
         conn.commit()
 
@@ -502,14 +573,15 @@ def get_trial_balance():
     with get_connection() as conn:
         return conn.execute("""
             SELECT ca.ac_code, ca.ac_name,
+                   COALESCE(ca.ac_type, 'EXPENSE') as ac_type,
                    ca.opening,
-                   COALESCE(SUM(jvl.debit),0) as total_debit,
+                   COALESCE(SUM(jvl.debit),0)  as total_debit,
                    COALESCE(SUM(jvl.credit),0) as total_credit,
                    ca.balance
             FROM chart_of_accounts ca
             LEFT JOIN journal_voucher_lines jvl ON ca.ac_code = jvl.ac_code
-            GROUP BY ca.ac_code, ca.ac_name, ca.opening, ca.balance
-            ORDER BY ca.ac_code
+            GROUP BY ca.ac_code, ca.ac_name, ca.ac_type, ca.opening, ca.balance
+            ORDER BY ca.ac_type, ca.ac_code
         """).fetchall()
 
 def get_inventory_stock(dated):

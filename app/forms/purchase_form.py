@@ -23,6 +23,7 @@ from forms.base_form import (BaseForm, InlineEntryGrid, make_grid, lov_button,
                               TransactionSearchDialog)
 import database as db
 from datetime import date
+from utils import amount_to_words, safe_float
 
 PURCHASE_COLS = [
     {"id": "inv_code",  "header": "InvCode",        "width": 9,  "editable": True,  "align": "left"},
@@ -259,6 +260,13 @@ class _TransactionBase(BaseForm):
         self._amt_var.set(f"{total:,.2f}" if total else "")
         self._echo_var.set(self._desc_e.get().strip())
         self._refresh_gl(total)
+        # Auto-fill In Words
+        if total > 0:
+            curr = self._words_e.cget("state")
+            self._words_e.configure(state="normal")
+            self._words_e.delete(0, "end")
+            self._words_e.insert(0, amount_to_words(total))
+            self._words_e.configure(state=curr)
 
     def _refresh_gl(self, total):
         self._gltree.delete(*self._gltree.get_children())
@@ -469,6 +477,43 @@ class SalesTransactionsForm(_TransactionBase):
     _DB_GET  = staticmethod(db.get_sale)
     _DB_ALL  = staticmethod(db.get_all_sales)
     _DB_NEXT = "sales_transactions"
+
+    def _grid_focus_out(self, row_idx, col_id, value):
+        """Override: use last_sale_rate for sales (not last_purchase_rate)."""
+        if col_id == "inv_code" and value:
+            item = db.get_inventory_item(value)
+            if item:
+                self._grid.set_value(row_idx, "inv_name", item["name"])
+                if not self._grid.get_value(row_idx, "rate"):
+                    # Use last SALE rate for sales form
+                    rate = item["last_sale_rate"] or item["last_purchase_rate"] or 0
+                    self._grid.set_value(row_idx, "rate",
+                                         f"{rate:.2f}" if rate else "")
+                # Show available stock in status bar
+                avail = item["quantity"]
+                self._echo_var.set(
+                    f"  {item['name']}  —  Available Stock: {avail:,.2f} {item['unit'] or ''}")
+        elif col_id in ("quantity", "rate") and value:
+            try:
+                n = float(value.replace(",", ""))
+                self._grid.set_value(row_idx, col_id, f"{n:,.2f}")
+            except ValueError:
+                pass
+        self._calc_value(row_idx)
+        self._update_total()
+
+    def on_save(self):
+        """Override: check stock availability before saving a sale."""
+        rows = [r for r in self._grid.get_all_rows() if r.get("inv_code")]
+        shortfalls = db.check_stock_for_sale(rows, self._current_inv)
+        if shortfalls:
+            msg = "Insufficient stock for:\n\n"
+            for inv_code, name, avail, req in shortfalls:
+                msg += f"  {name} ({inv_code}): Available {avail:,.2f}, Requested {req:,.2f}\n"
+            msg += "\nDo you want to save anyway?"
+            if not messagebox.askyesno("Stock Warning", msg, parent=self):
+                return
+        super().on_save()
 
     def _gl_rows(self, total, ac_code, ac_name):
         # Sales: debit party, credit sales revenue
