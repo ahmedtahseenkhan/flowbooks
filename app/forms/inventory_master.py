@@ -88,9 +88,9 @@ class InventoryMaster(BaseForm):
         self._lpd_e = tk.Entry(lu, width=14, bg="#E8E8E8", font=FONT_NORMAL, relief="sunken", bd=2, state="readonly")
         self._lpd_e.grid(row=1, column=3, sticky="w", padx=4, pady=3)
 
-        # ── Current Balances ───────────────────────────────────────────────────
-        cb = tk.LabelFrame(c, text="CURRENT BALANCES", bg=GROUP_BG, fg=LABEL_FG,
-                           font=FONT_BOLD, bd=2, relief="groove")
+        # ── Current Balances (auto-calculated — read-only) ─────────────────────
+        cb = tk.LabelFrame(c, text="CURRENT BALANCES  (auto-calculated from transactions)",
+                           bg=GROUP_BG, fg=LABEL_FG, font=FONT_BOLD, bd=2, relief="groove")
         cb.pack(fill="x", padx=10, pady=4)
 
         tk.Label(cb, text="Quantity", bg=GROUP_BG, fg=LABEL_FG, font=FONT_NORMAL).grid(row=0, column=0, sticky="e", padx=4, pady=4)
@@ -99,6 +99,19 @@ class InventoryMaster(BaseForm):
         tk.Label(cb, text="Value",    bg=GROUP_BG, fg=LABEL_FG, font=FONT_NORMAL).grid(row=0, column=2, sticky="e", padx=4, pady=4)
         self._val_e = tk.Entry(cb, width=18, bg="#E8E8E8", font=FONT_NORMAL, relief="sunken", bd=2, state="readonly")
         self._val_e.grid(row=0, column=3, sticky="w", padx=4, pady=4)
+
+        # Help label + quick-access button
+        help_f = tk.Frame(cb, bg=GROUP_BG)
+        help_f.grid(row=1, column=0, columnspan=5, sticky="w", padx=4, pady=(0,4))
+        tk.Label(help_f, text="ⓘ  Quantity is updated automatically by:",
+                 bg=GROUP_BG, fg="#555555", font=("Arial", 8)).pack(side="left")
+        tk.Label(help_f,
+                 text="  Purchase / Sale Transactions  |  Opening Transactions (OTF)",
+                 bg=GROUP_BG, fg=LABEL_FG, font=("Arial", 8, "bold")).pack(side="left")
+        tk.Button(help_f, text="➕ Add Opening Stock (OTF)",
+                  bg=GRID_HDR_BG, fg="white",
+                  font=("Arial", 8, "bold"), relief="raised", bd=2, cursor="hand2",
+                  command=self._open_otf).pack(side="left", padx=10)
 
         # ── Grid ───────────────────────────────────────────────────────────────
         cols = [("code","Code",70),("name","Item Name",200),("unit","Unit",50),
@@ -207,6 +220,23 @@ class InventoryMaster(BaseForm):
             self._current_code = code
             self._load_record(code)
         self._mode = "view"
+
+    def _open_otf(self):
+        """Open Opening Transactions Form pre-filled with current item code."""
+        from forms.inventory_transactions import OpeningTransactionsForm
+        otf = OpeningTransactionsForm(self, username=self._username)
+        # Pre-fill the first row with current item code if loaded
+        if self._current_code and otf._grid._widgets:
+            otf._grid.set_value(0, "inv_code", self._current_code)
+            item = db.get_inventory_item(self._current_code)
+            if item:
+                otf._grid.set_value(0, "inv_name", item["name"])
+            otf._grid._widgets[0]["quantity"].focus_set()
+        self.wait_window(otf)
+        # Refresh after OTF closes
+        if self._current_code:
+            self._load_record(self._current_code)
+        self._refresh_list()
 
     def _open_head_lov(self):
         """Open a simple Head selection popup."""

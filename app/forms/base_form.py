@@ -624,27 +624,30 @@ class InlineEntryGrid(tk.Frame):
     # ── Layout ────────────────────────────────────────────────────────────────
 
     def _build(self):
-        # Header bar
-        hdr = tk.Frame(self, bg=GRID_HDR_BG, height=self.ROW_H + 2)
-        hdr.pack(fill="x")
-        hdr.pack_propagate(False)
-        for col in self._cols:
-            anchor = "e" if col.get("align") == "right" else "w"
-            tk.Label(hdr, text=col["header"], bg=GRID_HDR_BG, fg=GRID_HDR_FG,
-                     font=FONT_GRID_H, width=col["width"],
-                     anchor=anchor, padx=2).pack(side="left", padx=1)
-        # Reserve space for scrollbar
-        tk.Label(hdr, text="", bg=GRID_HDR_BG, width=2).pack(side="right")
-
-        # Scrollable body
+        # Scrollable body first so scrollbar width is known
         body = tk.Frame(self, bg=FORM_BG)
         body.pack(fill="both", expand=True)
-
         self._canvas = tk.Canvas(body, bg=GRID_ROW1, highlightthickness=0)
         vsb = tk.Scrollbar(body, orient="vertical", command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
+
+        # Header bar — must be placed AFTER scrollbar to match widths exactly
+        # Use FONT_GRID (same as entries) so character widths match perfectly
+        hdr = tk.Frame(self, bg=GRID_HDR_BG, height=self.ROW_H + 2)
+        hdr.pack(fill="x", before=body)   # place above body
+        hdr.pack_propagate(False)
+        for col in self._cols:
+            anchor = "e" if col.get("align") == "right" else "w"
+            tk.Label(hdr, text=col["header"], bg=GRID_HDR_BG, fg=GRID_HDR_FG,
+                     font=FONT_GRID,           # same font as entries → pixel-perfect alignment
+                     width=col["width"],
+                     anchor=anchor).pack(side="left", padx=1)
+        # Reserve exact scrollbar width
+        vsb.update_idletasks()
+        sb_w = vsb.winfo_reqwidth() if vsb.winfo_reqwidth() > 0 else 17
+        tk.Frame(hdr, bg=GRID_HDR_BG, width=sb_w).pack(side="right")
 
         self._inner = tk.Frame(self._canvas, bg=GRID_ROW1)
         self._cwin  = self._canvas.create_window((0, 0), window=self._inner, anchor="nw")

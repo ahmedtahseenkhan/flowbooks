@@ -279,7 +279,7 @@ class _TransactionBase(BaseForm):
 
     # ── F9 / FocusOut on A/C ──────────────────────────────────────────────────
 
-    def _f9_ac(self, _event):
+    def _f9_ac(self, _event=None):
         dlg = AccountLOVDialog(self, self._ac_e.get().strip())
         if dlg.result:
             code, name = dlg.result
