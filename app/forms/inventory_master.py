@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from config import *
-from forms.base_form import BaseForm, make_grid
+from forms.base_form import BaseForm, make_grid, lov_button, InventoryLOVDialog
 import database as db
 from datetime import date
 
@@ -56,8 +56,12 @@ class InventoryMaster(BaseForm):
 
         # Row 2
         tk.Label(mf, text="Head",      bg=GROUP_BG, fg=LABEL_FG, font=FONT_BOLD).grid(row=2, column=0, sticky="e", padx=4, pady=4)
-        self._head_e = tk.Entry(mf, width=10, bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
-        self._head_e.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        head_frame = tk.Frame(mf, bg=GROUP_BG)
+        head_frame.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        self._head_e = tk.Entry(head_frame, width=10, bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
+        self._head_e.pack(side="left")
+        lov_button(head_frame, self._open_head_lov).pack(side="left", padx=2)
+        self._head_e.bind("<FocusOut>", self._lookup_head)
         tk.Label(mf, text="Head Name", bg=GROUP_BG, fg=LABEL_FG, font=FONT_BOLD).grid(row=2, column=2, sticky="e", padx=4, pady=4)
         self._head_name_e = tk.Entry(mf, width=24, bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
         self._head_name_e.grid(row=2, column=3, sticky="w", padx=4, pady=4)
@@ -196,10 +200,40 @@ class InventoryMaster(BaseForm):
             self._refresh_list()
 
     def on_search(self):
-        self._set_editable("normal")
-        self._clear_fields()
-        self._code_e.focus_set()
-        self._mode = "search"
+        """F9 / Search button opens inventory LOV."""
+        dlg = InventoryLOVDialog(self, self._code_e.get().strip())
+        if dlg.result:
+            code = dlg.result[0]
+            self._current_code = code
+            self._load_record(code)
+        self._mode = "view"
+
+    def _open_head_lov(self):
+        """Open a simple Head selection popup."""
+        dlg = _HeadSelectDialog(self)
+        if dlg.result:
+            hcode, hname = dlg.result
+            curr = self._head_e.cget("state")
+            self._head_e.configure(state="normal")
+            self._head_e.delete(0, "end"); self._head_e.insert(0, hcode)
+            self._head_e.configure(state=curr)
+            curr2 = self._head_name_e.cget("state")
+            self._head_name_e.configure(state="normal")
+            self._head_name_e.delete(0, "end"); self._head_name_e.insert(0, hname)
+            self._head_name_e.configure(state=curr2)
+
+    def _lookup_head(self, _):
+        code = self._head_e.get().strip()
+        if not code:
+            return
+        heads = db.get_all_heads()
+        h = next((r for r in heads if r["head_code"] == code), None)
+        if h:
+            curr = self._head_name_e.cget("state")
+            self._head_name_e.configure(state="normal")
+            self._head_name_e.delete(0, "end")
+            self._head_name_e.insert(0, h["head_name"])
+            self._head_name_e.configure(state=curr)
 
     def on_save(self):
         code = self._code_e.get().strip()
@@ -251,3 +285,52 @@ class InventoryMaster(BaseForm):
         self._refresh_list(db.search_inventory(term, by))
         self._set_editable("disabled")
         self._mode = "view"
+
+
+class _HeadSelectDialog(tk.Toplevel):
+    """Simple popup to select an Inventory Head."""
+    def __init__(self, master):
+        super().__init__(master)
+        self.title("Select Head")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.result = None
+        self.grab_set()
+        self.geometry("340x300")
+
+        hdr = tk.Frame(self, bg=GRID_HDR_BG)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="SELECT HEAD", bg=GRID_HDR_BG, fg="white",
+                 font=FONT_TITLE, pady=6).pack()
+
+        from forms.base_form import make_grid
+        cols = [("code","Head Code",80), ("name","Head Name",200)]
+        gf, tree = make_grid(self, cols, height=10)
+        gf.pack(fill="both", expand=True, padx=8, pady=8)
+
+        for i, r in enumerate(db.get_all_heads()):
+            tag = "odd" if i % 2 else "even"
+            tree.insert("", "end", values=(r["head_code"], r["head_name"]), tags=(tag,))
+
+        tree.bind("<Double-1>", lambda e: self._pick(tree))
+        tree.bind("<Return>",   lambda e: self._pick(tree))
+        self._tree = tree
+
+        bf = tk.Frame(self, bg=BG)
+        bf.pack(pady=6)
+        tk.Button(bf, text="OK",     width=8, bg=BTN_BG, font=FONT_NORMAL,
+                  relief="raised", command=lambda: self._pick(tree)).pack(side="left", padx=6)
+        tk.Button(bf, text="Cancel", width=8, bg=BTN_BG, font=FONT_NORMAL,
+                  relief="raised", command=self.destroy).pack(side="left", padx=6)
+
+        tk.Frame(self, bg=BOTTOM_BAR, height=4).pack(fill="x", side="bottom")
+        self.transient(master)
+        self.wait_window(self)
+
+    def _pick(self, tree):
+        sel = tree.selection()
+        if not sel:
+            return
+        v = tree.item(sel[0])["values"]
+        self.result = (str(v[0]), str(v[1]))
+        self.destroy()

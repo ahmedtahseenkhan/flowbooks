@@ -14,7 +14,7 @@ Delete Transaction button removes the focused grid row.
 import tkinter as tk
 from tkinter import messagebox
 from config import *
-from forms.base_form import BaseForm, InlineEntryGrid, AccountLOVDialog, TransactionSearchDialog
+from forms.base_form import BaseForm, InlineEntryGrid, AccountLOVDialog, TransactionSearchDialog, lov_button
 import database as db
 from datetime import date
 
@@ -39,6 +39,7 @@ class JournalVoucher(BaseForm):
         self._build_form()
         self._refresh_voucher_list()
         self._bind_keys()
+        self.after(50, self.on_add)   # auto-start in Add mode
 
     # ── Layout ─────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,15 @@ class JournalVoucher(BaseForm):
                  state="readonly", relief="sunken", bd=2,
                  justify="right").grid(row=3, column=3, sticky="w", padx=4, pady=5)
 
+        # ── Grid hint bar ─────────────────────────────────────────────────────
+        gh = tk.Frame(c, bg="#DDE4EE")
+        gh.pack(fill="x", padx=10)
+        tk.Label(gh, text="💡 A/C Code: type code OR double-click/F9 to search accounts",
+                 bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
+        lov_button(gh, lambda: self._open_ac_lov()).pack(side="left", padx=4)
+        tk.Label(gh, text="Search Account", bg="#DDE4EE", fg="#334466",
+                 font=("Arial", 8)).pack(side="left")
+
         # ── Inline entry grid ──────────────────────────────────────────────────
         self._grid = InlineEntryGrid(c, JV_COLS, start_rows=15)
         self._grid.pack(fill="both", expand=True, padx=10, pady=2)
@@ -136,6 +146,17 @@ class JournalVoucher(BaseForm):
         self._set_header_state("disabled")
 
     # ── Grid callbacks ─────────────────────────────────────────────────────────
+
+    def _open_ac_lov(self):
+        """Open account LOV for currently focused grid row."""
+        focused = self.focus_get()
+        row_idx = 0
+        for i, row in enumerate(self._grid._widgets):
+            if focused in row.values():
+                row_idx = i
+                break
+        self._grid_f9(row_idx, "ac_code",
+                      self._grid.get_value(row_idx, "ac_code"))
 
     def _grid_focus_out(self, row_idx, col_id, value):
         if col_id == "ac_code" and value:

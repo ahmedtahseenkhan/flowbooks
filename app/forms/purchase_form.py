@@ -18,7 +18,7 @@ Search button     → SEARCH BY DATE popup
 import tkinter as tk
 from tkinter import messagebox
 from config import *
-from forms.base_form import (BaseForm, InlineEntryGrid, make_grid,
+from forms.base_form import (BaseForm, InlineEntryGrid, make_grid, lov_button,
                               AccountLOVDialog, InventoryLOVDialog,
                               TransactionSearchDialog)
 import database as db
@@ -58,6 +58,8 @@ class _TransactionBase(BaseForm):
         self._current_inv = None
         self._build_form()
         self._bind_keys()
+        # Auto-start in Add mode so the form is immediately ready for input
+        self.after(50, self.on_add)
 
     # ── Layout ─────────────────────────────────────────────────────────────────
 
@@ -140,6 +142,16 @@ class _TransactionBase(BaseForm):
         # F9 / FocusOut on A/C field
         self._ac_e.bind("<F9>",       self._f9_ac)
         self._ac_e.bind("<FocusOut>", self._lookup_ac)
+        lov_button(hp, self._f9_ac).grid(row=0, column=6, padx=(0,2), pady=4)
+
+        # ── Inventory grid hint + LOV button ──────────────────────────────────
+        gh = tk.Frame(c, bg="#DDE4EE")
+        gh.pack(fill="x", padx=8)
+        tk.Label(gh, text="💡 InvCode: type code OR double-click/F9 to search",
+                 bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
+        lov_button(gh, lambda: self._open_inv_lov()).pack(side="left", padx=4)
+        tk.Label(gh, text="Search Inventory", bg="#DDE4EE", fg="#334466",
+                 font=("Arial", 8)).pack(side="left")
 
         # ── Inline inventory grid ──────────────────────────────────────────────
         self._grid = InlineEntryGrid(c, PURCHASE_COLS, start_rows=12)
@@ -225,6 +237,17 @@ class _TransactionBase(BaseForm):
                 self._grid._widgets[row_idx]["quantity"].focus_set()
                 self._calc_value(row_idx)
                 self._update_total()
+
+    def _open_inv_lov(self):
+        """Open inventory LOV for the currently focused grid row (or row 0)."""
+        focused = self.focus_get()
+        row_idx = 0
+        for i, row in enumerate(self._grid._widgets):
+            if focused in row.values():
+                row_idx = i
+                break
+        self._grid_f9(row_idx, "inv_code",
+                      self._grid.get_value(row_idx, "inv_code"))
 
     def _grid_changed(self, rows):
         self._update_total()

@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from config import *
-from forms.base_form import BaseForm, make_grid
+from forms.base_form import BaseForm, make_grid, lov_button, AccountLOVDialog
 import database as db
 from datetime import date
 
@@ -43,6 +43,8 @@ class OpeningBalancesForm(BaseForm):
             setattr(self, attr, e)
 
         self._le_code.bind("<FocusOut>", self._lookup_ac)
+        self._le_code.bind("<F9>", lambda e: self._f9_ac())
+        lov_button(lf, self._f9_ac).pack(side="left", padx=2)
         tk.Button(lf, text="Add Line",    bg=BTN_BG, font=FONT_SMALL, relief="raised", bd=2,
                   command=self._add_line).pack(side="left", padx=6)
         tk.Button(lf, text="Remove Line", bg=BTN_BG, font=FONT_SMALL, relief="raised", bd=2,
@@ -68,6 +70,14 @@ class OpeningBalancesForm(BaseForm):
                  font=FONT_NORMAL, state="readonly", relief="sunken", bd=2).pack(side="left", padx=4)
 
     # ── Lookup ─────────────────────────────────────────────────────────────────
+
+    def _f9_ac(self):
+        dlg = AccountLOVDialog(self, self._le_code.get().strip())
+        if dlg.result:
+            code, name = dlg.result
+            self._le_code.delete(0, "end"); self._le_code.insert(0, code)
+            self._le_name.delete(0, "end"); self._le_name.insert(0, name)
+            self._le_debit.focus_set()
 
     def _lookup_ac(self, _):
         code = self._le_code.get().strip()

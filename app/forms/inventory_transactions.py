@@ -13,7 +13,7 @@ All forms are keyboard-driven (Tab navigates, F9 opens LOV, auto-calc).
 import tkinter as tk
 from tkinter import messagebox
 from config import *
-from forms.base_form import BaseForm, InlineEntryGrid, make_grid, \
+from forms.base_form import BaseForm, InlineEntryGrid, make_grid, lov_button, \
     InventoryLOVDialog, AccountLOVDialog
 import database as db
 from datetime import date
@@ -66,6 +66,11 @@ class OpeningTransactionsForm(BaseForm):
         self._desc_e.bind("<Tab>", lambda e: (self._grid.focus_first(), "break")[1])
 
         # Inline grid
+        gh = tk.Frame(c, bg="#DDE4EE")
+        gh.pack(fill="x", padx=10)
+        tk.Label(gh, text="💡 InvCode: double-click or F9 to search",
+                 bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
+        lov_button(gh, self._open_inv_lov).pack(side="left", padx=4)
         self._grid = InlineEntryGrid(c, OTF_COLS, start_rows=10)
         self._grid.pack(fill="both", expand=True, padx=10, pady=2)
         self._grid.on_focus_out  = self._grid_fo
@@ -91,6 +96,17 @@ class OpeningTransactionsForm(BaseForm):
         gf.pack(fill="x", padx=10, pady=4)
         self._tree.bind("<Delete>", lambda e: self._delete_selected())
 
+    def _open_inv_lov(self):
+        """Open inventory LOV for the focused/first grid row."""
+        focused = self.focus_get()
+        row_idx = 0
+        for i, row in enumerate(self._grid._widgets):
+            if focused in row.values():
+                row_idx = i
+                break
+        self._grid_f9(row_idx, "inv_code",
+                      self._grid.get_value(row_idx, "inv_code"))
+
     def _grid_fo(self, row_idx, col_id, value):
         if col_id == "inv_code" and value:
             item = db.get_inventory_item(value)
@@ -105,7 +121,6 @@ class OpeningTransactionsForm(BaseForm):
                 self._grid.set_value(row_idx, col_id, f"{n:,.2f}")
             except ValueError:
                 pass
-        # Auto-calc value
         qty  = _n(self._grid.get_value(row_idx, "quantity"))
         rate = _n(self._grid.get_value(row_idx, "rate"))
         if qty and rate:
@@ -250,6 +265,11 @@ class CarryTransactionForm(BaseForm):
         self._desc_e.grid(row=1,column=1,columnspan=4,sticky="ew",padx=(2,8),pady=4)
         self._desc_e.bind("<Tab>", lambda e: (self._grid.focus_first(), "break")[1])
 
+        gh = tk.Frame(c, bg="#DDE4EE")
+        gh.pack(fill="x", padx=10)
+        tk.Label(gh, text="💡 InvCode: double-click or F9 to search",
+                 bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
+        lov_button(gh, self._open_inv_lov).pack(side="left", padx=4)
         self._grid = InlineEntryGrid(c, CHF_COLS, start_rows=10)
         self._grid.pack(fill="both", expand=True, padx=10, pady=2)
         self._grid.on_focus_out = self._grid_fo
@@ -270,6 +290,17 @@ class CarryTransactionForm(BaseForm):
         self._prev.bind("<<TreeviewSelect>>", self._on_prev_sel)
 
         self._set_hdr("disabled")
+
+
+    def _open_inv_lov(self):
+        focused = self.focus_get()
+        row_idx = 0
+        for i, row in enumerate(self._grid._widgets):
+            if focused in row.values():
+                row_idx = i
+                break
+        self._grid_f9(row_idx, "inv_code",
+                      self._grid.get_value(row_idx, "inv_code"))
 
     def _grid_fo(self, row_idx, col_id, value):
         if col_id == "inv_code" and value:
@@ -831,6 +862,11 @@ class CurrencyTransactionForm(BaseForm):
         self._desc_e.grid(row=2,column=1,columnspan=6,sticky="ew",padx=(2,8),pady=4)
         self._desc_e.bind("<Tab>", lambda e: (self._grid.focus_first(), "break")[1])
 
+        gh = tk.Frame(c, bg="#DDE4EE")
+        gh.pack(fill="x", padx=10)
+        tk.Label(gh, text="💡 Inv Code/Currency: double-click or F9 to search",
+                 bg="#DDE4EE", fg="#334466", font=("Arial", 8)).pack(side="left", padx=6, pady=2)
+        lov_button(gh, self._open_inv_lov).pack(side="left", padx=4)
         self._grid = InlineEntryGrid(c, CTF_COLS, start_rows=10)
         self._grid.pack(fill="both", expand=True, padx=10, pady=2)
         self._grid.on_focus_out = self._grid_fo

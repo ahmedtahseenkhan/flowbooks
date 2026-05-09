@@ -558,6 +558,18 @@ def make_grid(parent, columns, height=12, selectmode="browse"):
     return frame, tree
 
 
+def lov_button(parent, command, tooltip="F9 – List of Values"):
+    """Small ▼ button that opens a LOV popup. Place next to any code Entry."""
+    btn = tk.Button(parent, text="▼", command=command,
+                    bg=GRID_HDR_BG, fg="white",
+                    font=("Arial", 7, "bold"),
+                    relief="raised", bd=1,
+                    padx=2, pady=0, cursor="hand2")
+    btn.bind("<Enter>", lambda e: btn.configure(bg=BOTTOM_BAR))
+    btn.bind("<Leave>", lambda e: btn.configure(bg=GRID_HDR_BG))
+    return btn
+
+
 def stripe_tree(tree):
     for i, item in enumerate(tree.get_children()):
         tree.item(item, tags=("odd" if i % 2 else "even",))
@@ -693,11 +705,13 @@ class InlineEntryGrid(tk.Frame):
                     e.configure(state="readonly")
 
             if editable:
-                e.bind("<Tab>",        lambda ev, r=idx, c=cid: self._tab(ev, r, c))
-                e.bind("<F9>",         lambda ev, r=idx, c=cid: self._f9(r, c))
-                e.bind("<FocusOut>",   lambda ev, r=idx, c=cid: self._fo(r, c))
-                e.bind("<KeyRelease>", lambda ev: self._change())
-                e.bind("<BackSpace>",  lambda ev: self._change())
+                e.bind("<Tab>",          lambda ev, r=idx, c=cid: self._tab(ev, r, c))
+                e.bind("<F9>",           lambda ev, r=idx, c=cid: self._f9(r, c))
+                e.bind("<FocusOut>",     lambda ev, r=idx, c=cid: self._fo(r, c))
+                e.bind("<KeyRelease>",   lambda ev: self._change())
+                e.bind("<BackSpace>",    lambda ev: self._change())
+                # Double-click also opens LOV (same as F9)
+                e.bind("<Double-Button-1>", lambda ev, r=idx, c=cid: self._f9(r, c))
 
             row[cid] = e
 
