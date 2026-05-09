@@ -95,13 +95,13 @@ class _TransactionBase(BaseForm):
 
         tk.Label(hp, text="Name", **lkw).grid(
             row=0, column=6, sticky="e", padx=(4,2), pady=4)
+        # Display-only label — not an input field
         self._ac_name_var = tk.StringVar()
-        tk.Entry(hp, textvariable=self._ac_name_var, width=26,
-                 bg="#E8E8E8", font=FONT_NORMAL, state="readonly",
-                 relief="sunken", bd=2).grid(
-            row=0, column=7, sticky="ew", padx=(2,8), pady=4)
+        tk.Label(hp, textvariable=self._ac_name_var,
+                 bg=FORM_BG, fg="#000080", font=FONT_BOLD,
+                 anchor="w").grid(row=0, column=7, sticky="ew", padx=(2,8), pady=4)
 
-        # Row 1: Term | Party | Amount (auto)
+        # Row 1: Term | Party | Amount (auto-calculated display)
         tk.Label(hp, text="Term", **lkw).grid(
             row=1, column=0, sticky="e", padx=(8,2), pady=4)
         self._term_var = tk.StringVar(value="CREDIT")
@@ -116,12 +116,12 @@ class _TransactionBase(BaseForm):
 
         tk.Label(hp, text="Amount", **lkw).grid(
             row=1, column=6, sticky="e", padx=(4,2), pady=4)
+        # Display-only label — auto-calculated, not an input
         self._amt_var = tk.StringVar(value="")
-        tk.Entry(hp, textvariable=self._amt_var, width=16,
-                 bg="#E8E8E8", fg="#000080", font=("Arial", 9, "bold"),
-                 state="readonly", relief="sunken", bd=2,
-                 justify="right").grid(row=1, column=7, sticky="ew",
-                                       padx=(2,8), pady=4)
+        tk.Label(hp, textvariable=self._amt_var,
+                 bg=FORM_BG, fg="#000080", font=("Arial", 10, "bold"),
+                 anchor="e").grid(row=1, column=7, sticky="ew",
+                                  padx=(2,8), pady=4)
 
         # Row 2: In Words
         tk.Label(hp, text="In Words", **lkw).grid(
@@ -174,10 +174,10 @@ class _TransactionBase(BaseForm):
         tk.Label(tvf, text="Total Value", bg=FORM_BG, fg=LABEL_FG,
                  font=FONT_BOLD).pack(side="right", padx=4)
         self._total_var = tk.StringVar(value="")
-        tk.Entry(tvf, textvariable=self._total_var, width=16,
-                 bg="#EEF4FF", fg="#000080", font=("Arial", 9, "bold"),
-                 state="readonly", relief="sunken", bd=2,
-                 justify="right").pack(side="right", padx=4)
+        # Display-only — not an input field
+        tk.Label(tvf, textvariable=self._total_var,
+                 bg=FORM_BG, fg="#000080", font=("Arial", 11, "bold"),
+                 anchor="e", width=16).pack(side="right", padx=4)
 
         # ── General Ledger Transactions ────────────────────────────────────────
         glf = tk.LabelFrame(c, text="GENERAL LEDGER TRANSACTIONS",

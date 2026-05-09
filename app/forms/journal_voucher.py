@@ -75,22 +75,20 @@ class JournalVoucher(BaseForm):
         self._desc_e.grid(row=2, column=1, columnspan=5, sticky="ew",
                           padx=(4, 10), pady=5)
 
-        # Row 3: Dabit / Credit totals (bold blue, readonly)
+        # Row 3: Dabit / Credit totals — display labels, NOT input fields
         tk.Label(hp, text="Dabit", **lkw).grid(row=3, column=0, sticky="e",
                                                 padx=(10, 4), pady=5)
         self._debit_var  = tk.StringVar(value="")
-        tk.Entry(hp, textvariable=self._debit_var, width=18,
-                 bg="#EEF4FF", fg="#000080", font=("Arial", 10, "bold"),
-                 state="readonly", relief="sunken", bd=2,
-                 justify="right").grid(row=3, column=1, sticky="w", padx=4, pady=5)
+        tk.Label(hp, textvariable=self._debit_var,
+                 bg=FORM_BG, fg="#000080", font=("Arial", 10, "bold"),
+                 anchor="e", width=18).grid(row=3, column=1, sticky="w", padx=4, pady=5)
 
         tk.Label(hp, text="Credit", **lkw).grid(row=3, column=2, sticky="e",
                                                  padx=(10, 4), pady=5)
         self._credit_var = tk.StringVar(value="")
-        tk.Entry(hp, textvariable=self._credit_var, width=18,
-                 bg="#EEF4FF", fg="#000080", font=("Arial", 10, "bold"),
-                 state="readonly", relief="sunken", bd=2,
-                 justify="right").grid(row=3, column=3, sticky="w", padx=4, pady=5)
+        tk.Label(hp, textvariable=self._credit_var,
+                 bg=FORM_BG, fg="#000080", font=("Arial", 10, "bold"),
+                 anchor="e", width=18).grid(row=3, column=3, sticky="w", padx=4, pady=5)
 
         # ── Grid hint bar ─────────────────────────────────────────────────────
         gh = tk.Frame(c, bg="#DDE4EE")
