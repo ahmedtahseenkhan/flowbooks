@@ -53,9 +53,12 @@ class ChartOfAccounts(BaseForm):
         # Row 0: A/C Code | A/C Name
         tk.Label(panel, text="A/C Code",  bg=FORM_BG, fg=LABEL_FG, font=FONT_BOLD,
                  width=10, anchor="e").grid(row=0, column=0, sticky="e", padx=(10,4), pady=6)
-        self._ac_code_e = tk.Entry(panel, width=14, bg=ENTRY_BG, font=FONT_NORMAL,
+        ac_code_frame = tk.Frame(panel, bg=FORM_BG)
+        ac_code_frame.grid(row=0, column=1, sticky="w", padx=4, pady=6)
+        self._ac_code_e = tk.Entry(ac_code_frame, width=14, bg=ENTRY_BG, font=FONT_NORMAL,
                                    relief="sunken", bd=2)
-        self._ac_code_e.grid(row=0, column=1, sticky="w", padx=4, pady=6)
+        self._ac_code_e.pack(side="left")
+        lov_button(ac_code_frame, self._open_lov).pack(side="left", padx=2)
 
         tk.Label(panel, text="A/C Name",  bg=FORM_BG, fg=LABEL_FG, font=FONT_BOLD,
                  width=10, anchor="e").grid(row=0, column=2, sticky="e", padx=4, pady=6)

@@ -840,8 +840,11 @@ class CurrencyTransactionForm(BaseForm):
         self._dated_e.insert(0, date.today().strftime("%d/%m/%Y"))
 
         tk.Label(hp, text="A/C",        **lkw).grid(row=0,column=4,sticky="e",padx=(6,2),pady=4)
-        self._ac_e = tk.Entry(hp, width=9, **tkw)
-        self._ac_e.grid(row=0,column=5,sticky="w",padx=2,pady=4)
+        ac_frame = tk.Frame(hp, bg=hp.cget("bg"))
+        ac_frame.grid(row=0, column=5, sticky="w", padx=2, pady=4)
+        self._ac_e = tk.Entry(ac_frame, width=9, **tkw)
+        self._ac_e.pack(side="left")
+        lov_button(ac_frame, self._f9_ac).pack(side="left", padx=2)
         self._ac_e.bind("<F9>", self._f9_ac)
         self._ac_e.bind("<FocusOut>", self._lookup_ac)
         self._ac_name_var = tk.StringVar()
@@ -883,7 +886,7 @@ class CurrencyTransactionForm(BaseForm):
 
         self._set_hdr("disabled")
 
-    def _f9_ac(self, _):
+    def _f9_ac(self, _event=None):
         dlg = AccountLOVDialog(self, self._ac_e.get())
         if dlg.result:
             self._ac_e.delete(0,"end"); self._ac_e.insert(0, dlg.result[0])

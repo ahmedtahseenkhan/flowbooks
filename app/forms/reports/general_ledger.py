@@ -7,7 +7,7 @@ All dialogs match design images exactly.
 import tkinter as tk
 from tkinter import messagebox, font as tkfont
 from config import *
-from forms.base_form import DateRangeDialog, make_grid, AccountLOVDialog
+from forms.base_form import DateRangeDialog, make_grid, AccountLOVDialog, lov_button
 import database as db
 from datetime import date
 
@@ -106,7 +106,8 @@ class _GLRDialog(tk.Toplevel):
         self._ac_var = tk.StringVar()
         ac_e = tk.Entry(acr, textvariable=self._ac_var, width=10,
                         bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
-        ac_e.pack(side="left", padx=6)
+        ac_e.pack(side="left", padx=(6, 1))
+        lov_button(acr, lambda: self._f9(ac_e)).pack(side="left", padx=(0, 6))
         tk.Label(acr, text="Name", bg=BG, fg=LABEL_FG, font=FONT_BOLD).pack(side="left")
         self._ac_name_var = tk.StringVar()
         tk.Entry(acr, textvariable=self._ac_name_var, width=28,
@@ -445,7 +446,8 @@ def open_screen_ledger(master, username="ADMIN"):
     ac_var = tk.StringVar()
     ac_e = tk.Entry(ff, textvariable=ac_var, width=12, bg=ENTRY_BG,
                     font=FONT_NORMAL, relief="sunken", bd=2)
-    ac_e.pack(side="left", padx=4)
+    ac_e.pack(side="left", padx=(4, 1))
+    lov_button(ff, lambda: _f9_ac(ac_var, win)).pack(side="left", padx=(0, 6))
     tk.Label(ff, text="From:", bg=BG, fg=LABEL_FG, font=FONT_BOLD).pack(side="left", padx=4)
     fr_var = tk.StringVar(value=date.today().strftime("%d/%m/%Y"))
     tk.Entry(ff, textvariable=fr_var, width=12, bg=ENTRY_BG,

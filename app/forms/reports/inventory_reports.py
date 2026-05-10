@@ -6,7 +6,7 @@ All dialogs match design images exactly.
 import tkinter as tk
 from tkinter import messagebox
 from config import *
-from forms.base_form import DateRangeDialog, make_grid, InventoryLOVDialog
+from forms.base_form import DateRangeDialog, make_grid, InventoryLOVDialog, lov_button
 import database as db
 from datetime import date
 
@@ -190,7 +190,8 @@ class _ILRDialog(tk.Toplevel):
         self._inv_code_var = tk.StringVar()
         ic_e = tk.Entry(inv_f, textvariable=self._inv_code_var, width=10,
                         bg=ENTRY_BG, font=FONT_NORMAL, relief="sunken", bd=2)
-        ic_e.pack(side="left", padx=6)
+        ic_e.pack(side="left", padx=(6, 1))
+        lov_button(inv_f, self._f9_inv).pack(side="left", padx=(0, 6))
         self._inv_name_var = tk.StringVar()
         tk.Entry(inv_f, textvariable=self._inv_name_var, width=28,
                  bg="#E8E8E8", font=FONT_NORMAL, state="readonly",
@@ -226,7 +227,7 @@ class _ILRDialog(tk.Toplevel):
             self._from_var.set(f"01/07/{yr-1}")
             self._to_var.set(f"30/06/{yr}")
 
-    def _f9_inv(self, _):
+    def _f9_inv(self, _event=None):
         dlg = InventoryLOVDialog(self, self._inv_code_var.get())
         if dlg.result:
             self._inv_code_var.set(dlg.result[0])
