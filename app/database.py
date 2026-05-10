@@ -290,6 +290,20 @@ def save_account(data):
                 VALUES (?,?,?,?,?,?,?)""", data[:7])
         conn.commit()
 
+def next_account_code():
+    """Return the next available numeric account code (max + 1)."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT ac_code FROM chart_of_accounts").fetchall()
+        max_code = 0
+        for r in rows:
+            try:
+                n = int(r["ac_code"])
+                if n > max_code:
+                    max_code = n
+            except (ValueError, TypeError):
+                pass
+        return str(max_code + 1) if max_code > 0 else "1001"
+
 def get_account_types():
     return [
         'CURRENT ASSETS', 'FIXED ASSETS',
@@ -404,14 +418,32 @@ def get_purchase(invoice_no):
         return hdr, lines
 
 def save_purchase(header, lines):
+    """
+    Saves a purchase and:
+    1. Updates inventory quantities (delta)
+    2. Credits the party account (balance -= total) — we owe them more
+       Reverses old posting if this is an update.
+    """
+    ac_code    = header[2]   # party account code
+    total_new  = header[9]   # total_value of new invoice
     with get_connection() as conn:
-        # Reverse old lines
+        # Reverse old inventory lines
         old_lines = conn.execute(
             "SELECT inv_code, quantity, rate, value FROM purchase_lines WHERE invoice_no=?",
             (header[0],)).fetchall()
         for r in old_lines:
             _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
-        # Save new
+
+        # Reverse old party posting
+        old_hdr = conn.execute(
+            "SELECT ac_code, total_value FROM purchase_transactions WHERE invoice_no=?",
+            (header[0],)).fetchone()
+        if old_hdr and old_hdr["ac_code"]:
+            # Un-credit: balance += old_total (reverse the credit)
+            conn.execute("UPDATE chart_of_accounts SET balance=balance+? WHERE ac_code=?",
+                         (old_hdr["total_value"] or 0, old_hdr["ac_code"]))
+
+        # Save new header & lines
         conn.execute("""INSERT OR REPLACE INTO purchase_transactions
             (invoice_no, dated, ac_code, ac_name, term, party, amount, in_words, description, total_value)
             VALUES (?,?,?,?,?,?,?,?,?,?)""", header)
@@ -419,9 +451,14 @@ def save_purchase(header, lines):
         for ln in lines:
             conn.execute("""INSERT INTO purchase_lines
                 (invoice_no, serial, inv_code, inventory_name, quantity, rate, value) VALUES (?,?,?,?,?,?,?)""", ln)
-            if ln[2]:  # inv_code
+            if ln[2]:
                 _inv_delta(conn, ln[2], ln[4] or 0, ln[6] or 0,
                            last_rate=ln[5], last_date=header[1], is_purchase=True)
+
+        # Credit party account (we owe them more): balance -= total
+        if ac_code:
+            conn.execute("UPDATE chart_of_accounts SET balance=balance-? WHERE ac_code=?",
+                         (total_new or 0, ac_code))
         conn.commit()
 
 def delete_purchase(invoice_no):
@@ -431,6 +468,14 @@ def delete_purchase(invoice_no):
             (invoice_no,)).fetchall()
         for r in rows:
             _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
+
+        # Reverse party balance posting
+        hdr = conn.execute(
+            "SELECT ac_code, total_value FROM purchase_transactions WHERE invoice_no=?",
+            (invoice_no,)).fetchone()
+        if hdr and hdr["ac_code"]:
+            conn.execute("UPDATE chart_of_accounts SET balance=balance+? WHERE ac_code=?",
+                         (hdr["total_value"] or 0, hdr["ac_code"]))
         conn.execute("DELETE FROM purchase_transactions WHERE invoice_no=?", (invoice_no,))
         conn.commit()
 
@@ -452,14 +497,32 @@ def get_sale(invoice_no):
         return hdr, lines
 
 def save_sale(header, lines):
+    """
+    Saves a sale and:
+    1. Updates inventory quantities (delta — reduces stock)
+    2. Debits the party account (balance += total) — they owe us more
+       Reverses old posting if this is an update.
+    """
+    ac_code   = header[2]
+    total_new = header[9]
     with get_connection() as conn:
-        # Reverse old lines
+        # Reverse old inventory lines (add stock back)
         old_lines = conn.execute(
             "SELECT inv_code, quantity, rate, value FROM sales_lines WHERE invoice_no=?",
             (header[0],)).fetchall()
         for r in old_lines:
-            _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)  # add back
-        # Save new
+            _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)
+
+        # Reverse old party posting
+        old_hdr = conn.execute(
+            "SELECT ac_code, total_value FROM sales_transactions WHERE invoice_no=?",
+            (header[0],)).fetchone()
+        if old_hdr and old_hdr["ac_code"]:
+            # Un-debit: balance -= old_total (reverse the debit)
+            conn.execute("UPDATE chart_of_accounts SET balance=balance-? WHERE ac_code=?",
+                         (old_hdr["total_value"] or 0, old_hdr["ac_code"]))
+
+        # Save new header & lines
         conn.execute("""INSERT OR REPLACE INTO sales_transactions
             (invoice_no, dated, ac_code, ac_name, term, party, amount, in_words, description, total_value)
             VALUES (?,?,?,?,?,?,?,?,?,?)""", header)
@@ -467,9 +530,14 @@ def save_sale(header, lines):
         for ln in lines:
             conn.execute("""INSERT INTO sales_lines
                 (invoice_no, serial, inv_code, inventory_name, quantity, rate, value) VALUES (?,?,?,?,?,?,?)""", ln)
-            if ln[2]:  # inv_code
+            if ln[2]:
                 _inv_delta(conn, ln[2], -(ln[4] or 0), -(ln[6] or 0),
                            last_rate=ln[5], last_date=header[1], is_purchase=False)
+
+        # Debit party account (they owe us more): balance += total
+        if ac_code:
+            conn.execute("UPDATE chart_of_accounts SET balance=balance+? WHERE ac_code=?",
+                         (total_new or 0, ac_code))
         conn.commit()
 
 def delete_sale(invoice_no):
@@ -478,7 +546,15 @@ def delete_sale(invoice_no):
             "SELECT inv_code, quantity, rate, value FROM sales_lines WHERE invoice_no=?",
             (invoice_no,)).fetchall()
         for r in rows:
-            _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)  # add back
+            _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)
+
+        # Reverse party balance posting
+        hdr = conn.execute(
+            "SELECT ac_code, total_value FROM sales_transactions WHERE invoice_no=?",
+            (invoice_no,)).fetchone()
+        if hdr and hdr["ac_code"]:
+            conn.execute("UPDATE chart_of_accounts SET balance=balance-? WHERE ac_code=?",
+                         (hdr["total_value"] or 0, hdr["ac_code"]))
         conn.execute("DELETE FROM sales_transactions WHERE invoice_no=?", (invoice_no,))
         conn.commit()
 

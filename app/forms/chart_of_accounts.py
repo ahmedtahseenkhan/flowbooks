@@ -183,9 +183,13 @@ class ChartOfAccounts(BaseForm):
         self._set_fields_state("normal")
         self._ac_type_om.configure(state="normal")
         self._balance_e.configure(state="readonly")
-        self._ac_code_e.focus_set()
+        # Auto-suggest next available account code
+        suggested = db.next_account_code()
+        self._ac_code_e.delete(0, "end")
+        self._ac_code_e.insert(0, suggested)
+        self._ac_name_e.focus_set()   # cursor on Name (code already suggested)
         self._mode = "add"
-        self._nav_var.set("Adding new account — fill fields then Save")
+        self._nav_var.set(f"Adding new account — suggested code: {suggested}")
 
     def on_edit(self):
         if not self._current_code:

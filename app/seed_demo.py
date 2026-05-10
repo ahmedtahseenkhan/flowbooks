@@ -60,20 +60,20 @@ accounts = [
     # Income & Expense
     ("4001", "EXCHANGE INCOME",      "400", "INCOME",            "Income > Exchange",          0,         0, "INCOME"),
     ("5001", "EXCHANGE EXPENSE",     "500", "EXPENSES",          "Expenses > Exchange",        0,         0, "EXPENSE"),
-    # ── Parties (customers / suppliers) ──────────────────────────────────
-    ("415",  "MISCELLANEOUS",        "1100","PARTIES",           "Parties",                    0,         0, "CURRENT ASSETS"),
-    ("1003", "ADAM S COMPUTERS",     "1100","PARTIES",           "Parties",                    0,         0, "CURRENT ASSETS"),
-    ("1024", "ABID",                 "1100","PARTIES",           "Parties",            2_000_000, 2_000_000, "CURRENT ASSETS"),
-    ("1055", "ADAM MOB",             "1100","PARTIES",           "Parties",                    0,         0, "CURRENT ASSETS"),
-    ("1089", "AAQIB",                "1100","PARTIES",           "Parties",                    0,         0, "CURRENT ASSETS"),
-    ("1107", "SAQIB ASIF STAR",      "1100","PARTIES",           "Parties",            3_500_000, 3_500_000, "CURRENT ASSETS"),
-    ("1110", "AHAD AFTAB",           "1100","PARTIES",           "Parties",            1_200_000, 1_200_000, "CURRENT ASSETS"),
-    ("1118", "ACTION SPORTS",        "1100","PARTIES",           "Parties",              800_000,   800_000, "CURRENT ASSETS"),
-    ("1142", "AFX SHAHEEN CROWN",    "1100","PARTIES",           "Parties",            6_169_409, 6_169_409, "CURRENT ASSETS"),
-    ("1154", "AFX NUMAISH",          "1100","PARTIES",           "Parties",            8_710_000, 8_710_000, "CURRENT ASSETS"),
-    ("1162", "ADNA BUT",             "1100","PARTIES",           "Parties",              747_487,   747_487, "CURRENT ASSETS"),
-    ("1176", "YASIR IBRAHIM",        "1100","PARTIES",           "Parties",           15_247_912,15_247_912, "CURRENT ASSETS"),
-    ("1199", "ADEEL",                "1100","PARTIES",           "Parties",               26_960,    26_960, "CURRENT ASSETS"),
+    # ── Parties (customers / suppliers) — opening set to 0, OBF will post ─
+    ("415",  "MISCELLANEOUS",        "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1003", "ADAM S COMPUTERS",     "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1024", "ABID",                 "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1055", "ADAM MOB",             "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1089", "AAQIB",                "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1107", "SAQIB ASIF STAR",      "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1110", "AHAD AFTAB",           "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1118", "ACTION SPORTS",        "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1142", "AFX SHAHEEN CROWN",    "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1154", "AFX NUMAISH",          "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1162", "ADNA BUT",             "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1176", "YASIR IBRAHIM",        "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
+    ("1199", "ADEEL",                "1100","PARTIES", "Parties", 0, 0, "CURRENT ASSETS"),
 ]
 conn.executemany(
     "INSERT OR REPLACE INTO chart_of_accounts "
@@ -116,15 +116,17 @@ conn.close()
 
 ob_entries = [
     # (ac_code, ac_name, debit, credit, dated)
-    ("1176","YASIR IBRAHIM",        0,  15_247_912.80, "2026-05-01"),
-    ("1107","SAQIB ASIF STAR",      0,   3_500_000.00, "2026-05-01"),
-    ("1154","AFX NUMAISH",          0,   8_710_000.00, "2026-05-01"),
-    ("1110","AHAD AFTAB",           0,   1_200_000.00, "2026-05-01"),
-    ("1142","AFX SHAHEEN CROWN",    0,   6_169_409.00, "2026-05-01"),
-    ("1162","ADNA BUT",             0,     747_487.25, "2026-05-01"),
-    ("1024","ABID",                 0,   2_000_000.00, "2026-05-01"),
-    ("1118","ACTION SPORTS",        0,     800_000.00, "2026-05-01"),
-    ("1199","ADEEL",           26_960,          0,     "2026-05-01"),
+    # CREDITORS (we owe them money) — credit → balance goes negative
+    ("1176","YASIR IBRAHIM",        0, 15_247_912.80, "2026-05-01"),  # supplier, CR balance
+    ("1154","AFX NUMAISH",          0,  8_710_000.00, "2026-05-01"),  # supplier, CR balance
+    ("1142","AFX SHAHEEN CROWN",    0,  6_169_409.00, "2026-05-01"),  # supplier, CR balance
+    ("1107","SAQIB ASIF STAR",      0,  3_500_000.00, "2026-05-01"),  # supplier, CR balance
+    ("1110","AHAD AFTAB",           0,  1_200_000.00, "2026-05-01"),  # supplier, CR balance
+    ("1024","ABID",                 0,  2_000_000.00, "2026-05-01"),  # supplier, CR balance
+    ("1118","ACTION SPORTS",        0,    800_000.00, "2026-05-01"),  # supplier, CR balance
+    ("1162","ADNA BUT",             0,    747_487.25, "2026-05-01"),  # supplier, CR balance
+    # DEBTORS (they owe us money) — debit → balance goes positive
+    ("1199","ADEEL",           26_960,          0,    "2026-05-01"),  # customer, DR balance
 ]
 for row in ob_entries:
     db.save_opening_balance(row)
