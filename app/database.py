@@ -206,9 +206,42 @@ def init_db():
 
 def _ac_delta(conn, ac_code, debit_delta, credit_delta):
     """Apply a debit/credit delta to one account balance."""
-    conn.execute(
-        "UPDATE chart_of_accounts SET balance = balance + ? - ? WHERE ac_code=?",
-        (debit_delta, credit_delta, ac_code))
+    if ac_code:
+        conn.execute(
+            "UPDATE chart_of_accounts SET balance = balance + ? - ? WHERE ac_code=?",
+            (debit_delta, credit_delta, ac_code))
+
+def _find_ac(conn, ac_type=None, name_like=None):
+    """Find the first account matching an ac_type or name pattern."""
+    if name_like:
+        row = conn.execute(
+            "SELECT ac_code FROM chart_of_accounts WHERE LOWER(ac_name) LIKE ? ORDER BY ac_code LIMIT 1",
+            (f"%{name_like.lower()}%",)).fetchone()
+        if row:
+            return row["ac_code"]
+    if ac_type:
+        row = conn.execute(
+            "SELECT ac_code FROM chart_of_accounts WHERE ac_type=? ORDER BY ac_code LIMIT 1",
+            (ac_type,)).fetchone()
+        if row:
+            return row["ac_code"]
+    return None
+
+def _inventory_control_ac(conn):
+    """Return the Inventory Control account code (searches by name then type)."""
+    return _find_ac(conn, name_like="inventory") or _find_ac(conn, ac_type="CURRENT ASSETS")
+
+def _income_ac(conn):
+    """Return the first Income account code."""
+    return _find_ac(conn, ac_type="INCOME")
+
+def _expense_ac(conn):
+    """Return the first Expense account code."""
+    return _find_ac(conn, ac_type="EXPENSE") or _find_ac(conn, ac_type="COST OF GOODS SOLD")
+
+def _equity_ac(conn):
+    """Return the first Equity/Capital account code."""
+    return _find_ac(conn, ac_type="EQUITY")
 
 def _inv_delta(conn, inv_code, qty_delta, val_delta,
                last_rate=None, last_date=None, is_purchase=True):
@@ -455,10 +488,14 @@ def save_purchase(header, lines):
                 _inv_delta(conn, ln[2], ln[4] or 0, ln[6] or 0,
                            last_rate=ln[5], last_date=header[1], is_purchase=True)
 
-        # Credit party account (we owe them more): balance -= total
+        # Post GL entries:
+        #   DR Inventory Control (stock increases)
+        #   CR Party Account    (we owe them)
+        inv_ctrl = _inventory_control_ac(conn)
+        _ac_delta(conn, inv_ctrl, total_new or 0, 0)           # DR inventory
         if ac_code:
             conn.execute("UPDATE chart_of_accounts SET balance=balance-? WHERE ac_code=?",
-                         (total_new or 0, ac_code))
+                         (total_new or 0, ac_code))             # CR party
         conn.commit()
 
 def delete_purchase(invoice_no):
@@ -469,13 +506,17 @@ def delete_purchase(invoice_no):
         for r in rows:
             _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
 
-        # Reverse party balance posting
+        # Reverse GL entries
         hdr = conn.execute(
             "SELECT ac_code, total_value FROM purchase_transactions WHERE invoice_no=?",
             (invoice_no,)).fetchone()
-        if hdr and hdr["ac_code"]:
-            conn.execute("UPDATE chart_of_accounts SET balance=balance+? WHERE ac_code=?",
-                         (hdr["total_value"] or 0, hdr["ac_code"]))
+        if hdr:
+            tv = hdr["total_value"] or 0
+            inv_ctrl = _inventory_control_ac(conn)
+            _ac_delta(conn, inv_ctrl, 0, tv)                   # CR inventory (reverse DR)
+            if hdr["ac_code"]:
+                conn.execute("UPDATE chart_of_accounts SET balance=balance+? WHERE ac_code=?",
+                             (tv, hdr["ac_code"]))              # DR party (reverse CR)
         conn.execute("DELETE FROM purchase_transactions WHERE invoice_no=?", (invoice_no,))
         conn.commit()
 
@@ -534,27 +575,74 @@ def save_sale(header, lines):
                 _inv_delta(conn, ln[2], -(ln[4] or 0), -(ln[6] or 0),
                            last_rate=ln[5], last_date=header[1], is_purchase=False)
 
-        # Debit party account (they owe us more): balance += total
+        # Post GL entries with Exchange Income/Loss recognition:
+        #   DR Party Account        (they owe us — at sale value)
+        #   CR Inventory Control    (stock out — at cost/book value)
+        #   CR Exchange Income      (profit: sale value - cost value)
+        #   OR DR Exchange Expense  (loss: cost value - sale value)
+        inv_ctrl   = _inventory_control_ac(conn)
+        income_ac  = _income_ac(conn)
+        expense_ac = _expense_ac(conn)
+
+        # Calculate cost basis for each line using WAC (last_purchase_rate)
+        total_cost = 0.0
+        new_lines_data = conn.execute(
+            "SELECT sl.inv_code, sl.quantity, sl.value "
+            "FROM sales_lines sl WHERE sl.invoice_no=?", (header[0],)).fetchall()
+        for ln in new_lines_data:
+            item = conn.execute(
+                "SELECT last_purchase_rate FROM inventory_items WHERE code=?",
+                (ln["inv_code"],)).fetchone()
+            cost_rate = item["last_purchase_rate"] if item else 0
+            total_cost += (ln["quantity"] or 0) * (cost_rate or 0)
+
+        exchange_diff = (total_new or 0) - total_cost  # positive = profit
+
         if ac_code:
             conn.execute("UPDATE chart_of_accounts SET balance=balance+? WHERE ac_code=?",
-                         (total_new or 0, ac_code))
+                         (total_new or 0, ac_code))         # DR party (sale value)
+        _ac_delta(conn, inv_ctrl, 0, total_cost)            # CR inventory (at cost)
+        if exchange_diff > 0:
+            _ac_delta(conn, income_ac, 0, exchange_diff)    # CR exchange income
+        elif exchange_diff < 0:
+            _ac_delta(conn, expense_ac, abs(exchange_diff), 0)  # DR exchange expense
         conn.commit()
 
 def delete_sale(invoice_no):
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT inv_code, quantity, rate, value FROM sales_lines WHERE invoice_no=?",
-            (invoice_no,)).fetchall()
-        for r in rows:
+        # Get lines before deletion for cost calculation
+        lines = conn.execute(
+            "SELECT sl.inv_code, sl.quantity, sl.value, ii.last_purchase_rate "
+            "FROM sales_lines sl "
+            "LEFT JOIN inventory_items ii ON sl.inv_code=ii.code "
+            "WHERE sl.invoice_no=?", (invoice_no,)).fetchall()
+
+        # Restore inventory quantities
+        for r in lines:
             _inv_delta(conn, r["inv_code"], r["quantity"] or 0, r["value"] or 0)
 
-        # Reverse party balance posting
+        # Reverse GL entries
         hdr = conn.execute(
             "SELECT ac_code, total_value FROM sales_transactions WHERE invoice_no=?",
             (invoice_no,)).fetchone()
-        if hdr and hdr["ac_code"]:
-            conn.execute("UPDATE chart_of_accounts SET balance=balance-? WHERE ac_code=?",
-                         (hdr["total_value"] or 0, hdr["ac_code"]))
+        if hdr:
+            tv = hdr["total_value"] or 0
+            total_cost = sum((r["quantity"] or 0) * (r["last_purchase_rate"] or 0) for r in lines)
+            exchange_diff = tv - total_cost
+
+            inv_ctrl   = _inventory_control_ac(conn)
+            income_ac  = _income_ac(conn)
+            expense_ac = _expense_ac(conn)
+
+            if hdr["ac_code"]:
+                conn.execute("UPDATE chart_of_accounts SET balance=balance-? WHERE ac_code=?",
+                             (tv, hdr["ac_code"]))          # reverse party debit
+            _ac_delta(conn, inv_ctrl, total_cost, 0)        # reverse inventory credit
+            if exchange_diff > 0:
+                _ac_delta(conn, income_ac, exchange_diff, 0)    # reverse income
+            elif exchange_diff < 0:
+                _ac_delta(conn, expense_ac, 0, abs(exchange_diff))  # reverse expense
+
         conn.execute("DELETE FROM sales_transactions WHERE invoice_no=?", (invoice_no,))
         conn.commit()
 
@@ -599,7 +687,8 @@ def get_opening_balances(dated=None):
 
 def save_opening_balance(data):
     """data = (ac_code, ac_name, debit, credit, dated)
-    Also posts the net amount to chart_of_accounts.opening and balance."""
+    Posts net to the account's opening/balance AND posts the reverse entry to the
+    Capital/Equity account so every opening balance is a balanced double-entry."""
     ac_code, ac_name, debit, credit, dated = data
     with get_connection() as conn:
         conn.execute("INSERT INTO opening_balances (ac_code, ac_name, debit, credit, dated) VALUES (?,?,?,?,?)",
@@ -615,6 +704,11 @@ def save_opening_balance(data):
                 "UPDATE chart_of_accounts SET opening=?, balance=balance+? WHERE ac_code=?",
                 (new_opening, net, ac_code)
             )
+        # Balanced double-entry: post reverse to Capital/Equity
+        # (DR account → CR Capital; CR account → DR Capital)
+        equity = _equity_ac(conn)
+        if equity and equity != ac_code:
+            _ac_delta(conn, equity, credit or 0, debit or 0)
         conn.commit()
 
 def delete_opening_balance(row_id):
@@ -629,6 +723,10 @@ def delete_opening_balance(row_id):
                 "UPDATE chart_of_accounts SET opening=opening-?, balance=balance-? WHERE ac_code=?",
                 (net, net, row["ac_code"])
             )
+            # Reverse the Capital counterpart
+            equity = _equity_ac(conn)
+            if equity and equity != row["ac_code"]:
+                _ac_delta(conn, equity, row["debit"] or 0, row["credit"] or 0)
         conn.execute("DELETE FROM opening_balances WHERE id=?", (row_id,))
         conn.commit()
 
@@ -718,18 +816,31 @@ def get_opening_stock():
         return conn.execute("SELECT * FROM opening_stock ORDER BY dated, inv_code").fetchall()
 
 def save_opening_stock(inv_code, inv_name, qty, rate, value, dated):
+    """
+    GL: DR Inventory Control (stock in)
+        CR Equity/Capital     (financed by owner investment)
+    """
     with get_connection() as conn:
         conn.execute("""INSERT INTO opening_stock
             (inv_code, inventory_name, quantity, rate, value, dated) VALUES (?,?,?,?,?,?)""",
             (inv_code, inv_name, qty, rate, value, dated))
         _inv_delta(conn, inv_code, qty, value, last_rate=rate, last_date=dated)
+        inv_ctrl = _inventory_control_ac(conn)
+        equity   = _equity_ac(conn)
+        _ac_delta(conn, inv_ctrl, value or 0, 0)          # DR inventory control
+        _ac_delta(conn, equity,   0, value or 0)          # CR equity/capital
         conn.commit()
 
 def delete_opening_stock(row_id, inv_code):
     with get_connection() as conn:
         row = conn.execute("SELECT quantity, value FROM opening_stock WHERE id=?", (row_id,)).fetchone()
         if row:
-            _inv_delta(conn, inv_code, -(row["quantity"] or 0), -(row["value"] or 0))
+            v = row["value"] or 0
+            _inv_delta(conn, inv_code, -(row["quantity"] or 0), -v)
+            inv_ctrl = _inventory_control_ac(conn)
+            equity   = _equity_ac(conn)
+            _ac_delta(conn, inv_ctrl, 0, v)               # CR inventory (reverse DR)
+            _ac_delta(conn, equity,   v, 0)               # DR equity (reverse CR)
         conn.execute("DELETE FROM opening_stock WHERE id=?", (row_id,))
         conn.commit()
 
@@ -747,24 +858,53 @@ def get_carry(invoice_no):
         return hdr, lines
 
 def save_carry(header, lines):
+    """
+    Carry transaction (internal stock carry-forward).
+    GL: DR Inventory Control (stock received)
+        CR Equity/Capital    (internal carry-in)
+    """
     with get_connection() as conn:
+        # Reverse old lines if updating
+        old_lines = conn.execute(
+            "SELECT inv_code, quantity, value FROM carry_lines WHERE invoice_no=?",
+            (header[0],)).fetchall()
+        old_total = sum(r["value"] or 0 for r in old_lines)
+        for r in old_lines:
+            _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
+
         conn.execute("""INSERT OR REPLACE INTO carry_transactions
             (invoice_no, dated, description, total_value) VALUES (?,?,?,?)""", header)
         conn.execute("DELETE FROM carry_lines WHERE invoice_no=?", (header[0],))
+        total_new = 0.0
         for ln in lines:
             conn.execute("""INSERT INTO carry_lines
                 (invoice_no, inv_code, inventory_name, quantity, rate, value) VALUES (?,?,?,?,?,?)""", ln)
-        for ln in lines:
             if ln[1]:
                 _inv_delta(conn, ln[1], ln[3] or 0, ln[5] or 0,
                            last_rate=ln[4], last_date=header[1])
+                total_new += ln[5] or 0
+
+        # GL posting: reverse old, apply new
+        inv_ctrl = _inventory_control_ac(conn)
+        equity   = _equity_ac(conn)
+        _ac_delta(conn, inv_ctrl, 0, old_total)            # reverse old DR
+        _ac_delta(conn, equity,   old_total, 0)            # reverse old CR
+        _ac_delta(conn, inv_ctrl, total_new, 0)            # new DR
+        _ac_delta(conn, equity,   0, total_new)            # new CR
         conn.commit()
 
 def delete_carry(invoice_no):
     with get_connection() as conn:
-        rows = conn.execute("SELECT inv_code, quantity, value FROM carry_lines WHERE invoice_no=?", (invoice_no,)).fetchall()
+        rows = conn.execute(
+            "SELECT inv_code, quantity, value FROM carry_lines WHERE invoice_no=?",
+            (invoice_no,)).fetchall()
+        total = sum(r["value"] or 0 for r in rows)
         for r in rows:
             _inv_delta(conn, r["inv_code"], -(r["quantity"] or 0), -(r["value"] or 0))
+        inv_ctrl = _inventory_control_ac(conn)
+        equity   = _equity_ac(conn)
+        _ac_delta(conn, inv_ctrl, 0, total)                # CR inventory (reverse DR)
+        _ac_delta(conn, equity,   total, 0)                # DR equity (reverse CR)
         conn.execute("DELETE FROM carry_transactions WHERE invoice_no=?", (invoice_no,))
         conn.commit()
 
@@ -784,6 +924,13 @@ def get_value_adjustments(adj_type=None):
 
 def save_value_adjustment(ref_no, adj_type, inv_code, inv_name,
                           old_qty, new_qty, old_value, new_value, dated, description):
+    """
+    GL for value increase: DR Inventory Control, CR Exchange Income
+    GL for value decrease: DR Exchange Expense, CR Inventory Control
+    GL for qty change:    mirrors value direction
+    """
+    dq  = (new_qty   or 0) - (old_qty   or 0)
+    dv  = (new_value or 0) - (old_value or 0)
     with get_connection() as conn:
         conn.execute("""INSERT INTO value_adjustments
             (ref_no, adj_type, inv_code, inventory_name,
@@ -791,14 +938,36 @@ def save_value_adjustment(ref_no, adj_type, inv_code, inv_name,
             VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (ref_no, adj_type, inv_code, inv_name,
              old_qty, new_qty, old_value, new_value, dated, description))
-        _inv_delta(conn, inv_code, new_qty - old_qty, new_value - old_value)
+        _inv_delta(conn, inv_code, dq, dv)
+        inv_ctrl = _inventory_control_ac(conn)
+        if dv > 0:
+            income_ac = _income_ac(conn)
+            _ac_delta(conn, inv_ctrl,  dv, 0)      # DR inventory (value up)
+            _ac_delta(conn, income_ac, 0,  dv)     # CR exchange income
+        elif dv < 0:
+            expense_ac = _expense_ac(conn)
+            _ac_delta(conn, expense_ac, abs(dv), 0)  # DR exchange expense (value down)
+            _ac_delta(conn, inv_ctrl,   0, abs(dv))  # CR inventory
         conn.commit()
 
 def delete_value_adjustment(row_id, inv_code):
     with get_connection() as conn:
-        row = conn.execute("SELECT old_qty, new_qty, old_value, new_value FROM value_adjustments WHERE id=?", (row_id,)).fetchone()
+        row = conn.execute(
+            "SELECT old_qty, new_qty, old_value, new_value FROM value_adjustments WHERE id=?",
+            (row_id,)).fetchone()
         if row:
-            _inv_delta(conn, inv_code, -(row["new_qty"]-row["old_qty"]), -(row["new_value"]-row["old_value"]))
+            dq = (row["new_qty"]   or 0) - (row["old_qty"]   or 0)
+            dv = (row["new_value"] or 0) - (row["old_value"] or 0)
+            _inv_delta(conn, inv_code, -dq, -dv)
+            inv_ctrl = _inventory_control_ac(conn)
+            if dv > 0:
+                income_ac = _income_ac(conn)
+                _ac_delta(conn, inv_ctrl,  0,  dv)     # reverse: CR inventory
+                _ac_delta(conn, income_ac, dv, 0)      # reverse: DR income
+            elif dv < 0:
+                expense_ac = _expense_ac(conn)
+                _ac_delta(conn, expense_ac, 0, abs(dv))  # reverse: CR expense
+                _ac_delta(conn, inv_ctrl, abs(dv), 0)    # reverse: DR inventory
         conn.execute("DELETE FROM value_adjustments WHERE id=?", (row_id,))
         conn.commit()
 

@@ -51,12 +51,12 @@ print(f"Account heads: {len(heads)}")
 # ── 4. Chart of Accounts ───────────────────────────────────────────────────────
 #   (ac_code, ac_name, head_code, head_name, ac_path, opening, balance, ac_type)
 accounts = [
-    # Cash & Bank
-    ("1",    "CASH IN HAND",         "100", "ASSETS",            "Assets > Cash",      5_000_000, 5_000_000, "CURRENT ASSETS"),
-    ("2",    "BANK ACCOUNT",         "100", "ASSETS",            "Assets > Bank",        500_000,   500_000, "CURRENT ASSETS"),
+    # Cash & Bank — opening=0; set by JV below for balanced double-entry
+    ("1",    "CASH IN HAND",         "100", "ASSETS",            "Assets > Cash",            0,         0, "CURRENT ASSETS"),
+    ("2",    "BANK ACCOUNT",         "100", "ASSETS",            "Assets > Bank",            0,         0, "CURRENT ASSETS"),
     ("201",  "INVENTORY CONTROL A/C","100", "ASSETS",            "Assets > Inventory",         0,         0, "CURRENT ASSETS"),
-    # Capital
-    ("1000", "CAPITAL / EQUITY",     "300", "EQUITY / CAPITAL",  "Equity",             10_000_000,10_000_000,"EQUITY"),
+    # Capital — starts at 0; opening contributions posted via OBF below (balanced double-entry)
+    ("1000", "CAPITAL / EQUITY",     "300", "EQUITY / CAPITAL",  "Equity",                      0,         0, "EQUITY"),
     # Income & Expense
     ("4001", "EXCHANGE INCOME",      "400", "INCOME",            "Income > Exchange",          0,         0, "INCOME"),
     ("5001", "EXCHANGE EXPENSE",     "500", "EXPENSES",          "Expenses > Exchange",        0,         0, "EXPENSE"),
@@ -88,26 +88,27 @@ conn.execute("INSERT OR REPLACE INTO account_heads VALUES (?,?)", ("CUR","CURREN
 #  (code,name,symbol,head,head_name,unit,last_sale_rate,last_sale_date,
 #   last_purchase_rate,last_purchase_date,quantity,value)
 TODAY = "2026-05-10"
+# Define currency items with qty=0, value=0 (opening stock via OTF below)
 currencies = [
-    ("1",  "EURO",          "€",  "CUR","CURRENCY","EUR",  195.0, TODAY, 192.0, TODAY,    500.00,    96000.0),
-    ("2",  "US DOLLAR",     "$",  "CUR","CURRENCY","USD",  285.5, TODAY, 283.0, TODAY,    150.00,    42450.0),
-    ("3",  "BRITISH POUND", "£",  "CUR","CURRENCY","GBP",  390.0, TODAY, 389.0, TODAY,      0.25,       97.25),
-    ("4",  "UAE DIRHAM",    "AED","CUR","CURRENCY","AED",   44.5, TODAY,  43.0, TODAY,  3500.00,   150500.0),
-    ("5",  "SAUDI RIYAL",   "SAR","CUR","CURRENCY","SAR",   78.0, TODAY,  77.0, TODAY,  1000.00,    77000.0),
-    ("6",  "QATARI RIYAL",  "QAR","CUR","CURRENCY","QAR",   34.0, TODAY,  33.88,TODAY,     0.00,        0.0),
-    ("7",  "WFX - MALIK",   "",   "CUR","CURRENCY","AED",   55.8, TODAY,  55.0, TODAY,     0.00,        0.0),
-    ("8",  "MIX CHAMAK",    "",   "CUR","CURRENCY","AED",   30.0, TODAY,  29.68,TODAY, 26866.25, 797188.3),
-    ("9",  "OMANI REYAL",   "OMR","CUR","CURRENCY","OMR",115200.0,TODAY,115100.0,TODAY,    20.00, 2302000.0),
-    ("10", "DIT MALI",      "",   "CUR","CURRENCY","AED",   78.0, TODAY,  77.8, TODAY,325047.52,25283697.56),
-    ("11", "RMB",           "",   "CUR","CURRENCY","RMB",   23.0, TODAY,  22.95,TODAY,     0.00,        0.0),
-    ("12", "KACHI",         "",   "CUR","CURRENCY","AED",   56.0, TODAY,  55.8, TODAY,     0.00,        0.0),
-    ("13", "AHAD AED",      "AED","CUR","CURRENCY","AED",   44.0, TODAY,  43.5, TODAY,     0.00,        0.0),
+    ("1",  "EURO",          "€",  "CUR","CURRENCY","EUR",  0, "", 0, "", 0, 0),
+    ("2",  "US DOLLAR",     "$",  "CUR","CURRENCY","USD",  0, "", 0, "", 0, 0),
+    ("3",  "BRITISH POUND", "£",  "CUR","CURRENCY","GBP",  0, "", 0, "", 0, 0),
+    ("4",  "UAE DIRHAM",    "AED","CUR","CURRENCY","AED",  0, "", 0, "", 0, 0),
+    ("5",  "SAUDI RIYAL",   "SAR","CUR","CURRENCY","SAR",  0, "", 0, "", 0, 0),
+    ("6",  "QATARI RIYAL",  "QAR","CUR","CURRENCY","QAR",  0, "", 0, "", 0, 0),
+    ("7",  "WFX - MALIK",   "",   "CUR","CURRENCY","AED",  0, "", 0, "", 0, 0),
+    ("8",  "MIX CHAMAK",    "",   "CUR","CURRENCY","AED",  0, "", 0, "", 0, 0),
+    ("9",  "OMANI REYAL",   "OMR","CUR","CURRENCY","OMR",  0, "", 0, "", 0, 0),
+    ("10", "DIT MALI",      "",   "CUR","CURRENCY","AED",  0, "", 0, "", 0, 0),
+    ("11", "RMB",           "",   "CUR","CURRENCY","RMB",  0, "", 0, "", 0, 0),
+    ("12", "KACHI",         "",   "CUR","CURRENCY","AED",  0, "", 0, "", 0, 0),
+    ("13", "AHAD AED",      "AED","CUR","CURRENCY","AED",  0, "", 0, "", 0, 0),
 ]
 conn.executemany("""INSERT OR REPLACE INTO inventory_items
     (code,name,symbol,head,head_name,unit,
      last_sale_rate,last_sale_date,last_purchase_rate,last_purchase_date,
      quantity,value) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", currencies)
-print(f"Inventory items (currencies): {len(currencies)}")
+print(f"Inventory items (currencies): {len(currencies)} (qty=0; opening stock set via OTF below)")
 
 # ── 7. Opening Balances for Party Accounts ────────────────────────────────────
 # Close our direct connection first — save_opening_balance uses its own conn
@@ -116,23 +117,44 @@ conn.close()
 
 ob_entries = [
     # (ac_code, ac_name, debit, credit, dated)
-    # CREDITORS (we owe them money) — credit → balance goes negative
-    ("1176","YASIR IBRAHIM",        0, 15_247_912.80, "2026-05-01"),  # supplier, CR balance
-    ("1154","AFX NUMAISH",          0,  8_710_000.00, "2026-05-01"),  # supplier, CR balance
-    ("1142","AFX SHAHEEN CROWN",    0,  6_169_409.00, "2026-05-01"),  # supplier, CR balance
-    ("1107","SAQIB ASIF STAR",      0,  3_500_000.00, "2026-05-01"),  # supplier, CR balance
-    ("1110","AHAD AFTAB",           0,  1_200_000.00, "2026-05-01"),  # supplier, CR balance
-    ("1024","ABID",                 0,  2_000_000.00, "2026-05-01"),  # supplier, CR balance
-    ("1118","ACTION SPORTS",        0,    800_000.00, "2026-05-01"),  # supplier, CR balance
-    ("1162","ADNA BUT",             0,    747_487.25, "2026-05-01"),  # supplier, CR balance
-    # DEBTORS (they owe us money) — debit → balance goes positive
-    ("1199","ADEEL",           26_960,          0,    "2026-05-01"),  # customer, DR balance
+    # Each entry automatically posts the reverse to Capital/Equity (balanced double-entry).
+    # ASSETS — cash on hand and in bank (DR → CR Capital auto)
+    ("1",    "CASH IN HAND",       5_000_000,          0, "2026-05-01"),
+    ("2",    "BANK ACCOUNT",         500_000,          0, "2026-05-01"),
+    # CREDITORS (we owe them money) — credit → DR Capital auto
+    ("1176","YASIR IBRAHIM",               0, 15_247_912.80, "2026-05-01"),
+    ("1154","AFX NUMAISH",                 0,  8_710_000.00, "2026-05-01"),
+    ("1142","AFX SHAHEEN CROWN",           0,  6_169_409.00, "2026-05-01"),
+    ("1107","SAQIB ASIF STAR",             0,  3_500_000.00, "2026-05-01"),
+    ("1110","AHAD AFTAB",                  0,  1_200_000.00, "2026-05-01"),
+    ("1024","ABID",                        0,  2_000_000.00, "2026-05-01"),
+    ("1118","ACTION SPORTS",               0,    800_000.00, "2026-05-01"),
+    ("1162","ADNA BUT",                    0,    747_487.25, "2026-05-01"),
+    # DEBTORS (they owe us money) — debit → CR Capital auto
+    ("1199","ADEEL",                  26_960,          0,    "2026-05-01"),
 ]
 for row in ob_entries:
     db.save_opening_balance(row)
 print(f"Opening balances: {len(ob_entries)}")
 
-# ── 8. Journal Vouchers ────────────────────────────────────────────────────────
+# ── 8. Opening Stock (OTF) — posts to Inventory Control (201) + Equity ────────
+# DR: Inventory Control (201)   CR: Capital / Equity (1000)
+# (inv_code, inv_name, qty, rate, value, dated)
+opening_stock = [
+    ("1",  "EURO",         500.00,    192.0,    96_000.00, "2026-05-01"),
+    ("2",  "US DOLLAR",    150.00,    283.0,    42_450.00, "2026-05-01"),
+    ("3",  "BRITISH POUND",  0.25,    389.0,        97.25, "2026-05-01"),
+    ("4",  "UAE DIRHAM",  3500.00,     43.0,   150_500.00, "2026-05-01"),
+    ("5",  "SAUDI RIYAL", 1000.00,     77.0,    77_000.00, "2026-05-01"),
+    ("8",  "MIX CHAMAK", 26866.25,    29.68,   797_188.30, "2026-05-01"),
+    ("9",  "OMANI REYAL",   20.00, 115_100.0, 2_302_000.00,"2026-05-01"),
+    ("10", "DIT MALI",  325047.52,     77.8,  25_283_697.56,"2026-05-01"),
+]
+for row in opening_stock:
+    db.save_opening_stock(*row)
+print(f"Opening stock (OTF): {len(opening_stock)} currencies → posted to Inventory Control (201)")
+
+# ── 9. Journal Vouchers ────────────────────────────────────────────────────────
 # (conn was closed above — all subsequent calls use db module's own connections)
 vouchers = [
     # (voucher_no, date, description, debit, credit),  lines: [(vno,ac_code,title,dr,cr)]
@@ -173,7 +195,7 @@ for vno, dt, desc, td, tc, lines in vouchers:
     db.save_voucher((vno, dt, desc, td, tc), lines)
 print(f"Journal vouchers: {len(vouchers)}")
 
-# ── 9. Purchase Transactions ───────────────────────────────────────────────────
+# ── 10. Purchase Transactions ──────────────────────────────────────────────────
 purchases = [
     # header: (inv_no,dated,ac_code,ac_name,term,party,amount,in_words,desc,total)
     # lines:  [(inv_no,serial,inv_code,inv_name,qty,rate,value)]
@@ -217,7 +239,7 @@ for p in purchases:
     db.save_purchase(p["header"], p["lines"])
 print(f"Purchase transactions: {len(purchases)}")
 
-# ── 10. Sales Transactions ─────────────────────────────────────────────────────
+# ── 11. Sales Transactions ─────────────────────────────────────────────────────
 sales = [
     {
         "header": ("4841","2026-05-02","1107","SAQIB ASIF STAR","CREDIT",
@@ -269,10 +291,12 @@ print("    8  Journal Vouchers (cash receipts & payments)")
 print("    5  Purchase transactions (buying currencies)")
 print("    4  Sales transactions (selling currencies)")
 print()
-print("  OPENING BALANCES POSTED:")
+print("  OPENING BALANCES POSTED (balanced → counterpart in Capital):")
+print("    CASH IN HAND        5,000,000 DR")
+print("    BANK ACCOUNT          500,000 DR")
 print("    YASIR IBRAHIM      15,247,912 CR")
-print("    SAQIB ASIF STAR     3,500,000 CR")
 print("    AFX NUMAISH         8,710,000 CR")
+print("    AFX SHAHEEN CROWN   6,169,409 CR")
 print("    + 6 more parties")
 print()
 print("  Run the app to explore:")
