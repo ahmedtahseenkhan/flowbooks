@@ -19,6 +19,7 @@ from config import *
 def _import_forms():
     from forms.chart_of_accounts   import ChartOfAccounts, DefineHeadingAccounts
     from forms.account_types        import AccountTypesForm
+    from forms.payment_terms        import PaymentTermsForm
     from forms.inventory_master     import InventoryMaster
     from forms.inventory_heads      import InventoryHeads
     from forms.journal_voucher      import JournalVoucher
@@ -148,6 +149,7 @@ class MainWindow(tk.Tk):
         m.add_command(label="Chart of Accounts - Special / CAS", command=lambda: self._open_coa("special"))
         m.add_separator()
         m.add_command(label="Account Types / ATM",               command=lambda: self._open(self._forms["AccountTypesForm"]))
+        m.add_command(label="Payment Terms / PTM",               command=lambda: self._open(self._forms["PaymentTermsForm"]))
 
         # ── Accounts Transactions
         m2 = tk.Menu(mb, tearoff=0)

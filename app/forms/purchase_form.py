@@ -108,8 +108,9 @@ class _TransactionBase(BaseForm):
         # Row 1: Term | Party | Amount (auto-calculated display)
         tk.Label(hp, text="Term", **lkw).grid(
             row=1, column=0, sticky="e", padx=(8,2), pady=4)
-        self._term_var = tk.StringVar(value="CREDIT")
-        om = tk.OptionMenu(hp, self._term_var, "CREDIT", "CASH")
+        terms = db.get_payment_terms()
+        self._term_var = tk.StringVar(value=terms[0] if terms else "CREDIT")
+        om = tk.OptionMenu(hp, self._term_var, *terms)
         om.config(bg=ENTRY_BG, fg="black", font=FONT_NORMAL,
                   relief="sunken", bd=2, highlightthickness=0,
                   activebackground=GRID_HDR_BG, activeforeground="white")

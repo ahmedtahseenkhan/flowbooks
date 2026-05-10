@@ -189,6 +189,11 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             type_name TEXT UNIQUE NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS payment_terms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            term_name TEXT UNIQUE NOT NULL
+        );
     """)
 
     # Default admin user
@@ -202,6 +207,10 @@ def init_db():
         ('EQUITY',), ('INCOME',), ('COST OF GOODS SOLD',), ('EXPENSE',),
     ]
     c.executemany("INSERT OR IGNORE INTO account_types (type_name) VALUES (?)", default_types)
+
+    # Seed default payment terms
+    default_terms = [('CASH',), ('CREDIT',), ('CHEQUE',), ('BANK TRANSFER',)]
+    c.executemany("INSERT OR IGNORE INTO payment_terms (term_name) VALUES (?)", default_terms)
 
     # Sample account heads
     heads = [
@@ -383,6 +392,38 @@ def save_account_type(type_name, row_id=None):
 def delete_account_type(row_id):
     with get_connection() as conn:
         conn.execute("DELETE FROM account_types WHERE id=?", (row_id,))
+        conn.commit()
+
+# ── Payment Terms ──────────────────────────────────────────────────────────────
+
+def get_payment_terms():
+    """Return list of term_name strings."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT term_name FROM payment_terms ORDER BY term_name").fetchall()
+        return [r["term_name"] for r in rows] or ["CASH", "CREDIT"]
+
+def get_all_payment_terms():
+    with get_connection() as conn:
+        return conn.execute("SELECT * FROM payment_terms ORDER BY term_name").fetchall()
+
+def save_payment_term(term_name, row_id=None):
+    term_name = term_name.strip().upper()
+    if not term_name:
+        return False, "Term name cannot be empty."
+    with get_connection() as conn:
+        if row_id:
+            conn.execute("UPDATE payment_terms SET term_name=? WHERE id=?", (term_name, row_id))
+        else:
+            try:
+                conn.execute("INSERT INTO payment_terms (term_name) VALUES (?)", (term_name,))
+            except Exception:
+                return False, f"'{term_name}' already exists."
+        conn.commit()
+    return True, "Saved."
+
+def delete_payment_term(row_id):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM payment_terms WHERE id=?", (row_id,))
         conn.commit()
 
 def delete_account(ac_code):
