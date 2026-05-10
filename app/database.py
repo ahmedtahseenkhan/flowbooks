@@ -184,11 +184,24 @@ def init_db():
             credit REAL DEFAULT 0,
             dated TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS account_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type_name TEXT UNIQUE NOT NULL
+        );
     """)
 
     # Default admin user
     c.execute("INSERT OR IGNORE INTO users (username, password, full_name, designation, department, section) VALUES (?,?,?,?,?,?)",
               ("admin", "admin123", "DANISH", "MANAGER", "ACCOUNTS", "HEAD OFFICE"))
+
+    # Seed default account types (INSERT OR IGNORE so existing data is preserved)
+    default_types = [
+        ('CURRENT ASSETS',), ('FIXED ASSETS',),
+        ('CURRENT LIABILITIES',), ('LONG TERM LIABILITIES',),
+        ('EQUITY',), ('INCOME',), ('COST OF GOODS SOLD',), ('EXPENSE',),
+    ]
+    c.executemany("INSERT OR IGNORE INTO account_types (type_name) VALUES (?)", default_types)
 
     # Sample account heads
     heads = [
@@ -338,11 +351,39 @@ def next_account_code():
         return str(max_code + 1) if max_code > 0 else "1001"
 
 def get_account_types():
-    return [
-        'CURRENT ASSETS', 'FIXED ASSETS',
-        'CURRENT LIABILITIES', 'LONG TERM LIABILITIES',
-        'EQUITY', 'INCOME', 'COST OF GOODS SOLD', 'EXPENSE',
-    ]
+    """Return list of type_name strings from the account_types table."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT type_name FROM account_types ORDER BY type_name").fetchall()
+        return [r["type_name"] for r in rows] or [
+            'CURRENT ASSETS', 'FIXED ASSETS', 'CURRENT LIABILITIES',
+            'LONG TERM LIABILITIES', 'EQUITY', 'INCOME', 'COST OF GOODS SOLD', 'EXPENSE',
+        ]
+
+def get_all_account_types():
+    """Return full rows (id, type_name) for the CRUD form."""
+    with get_connection() as conn:
+        return conn.execute("SELECT * FROM account_types ORDER BY type_name").fetchall()
+
+def save_account_type(type_name, row_id=None):
+    """Insert new or update existing account type. Returns (ok, message)."""
+    type_name = type_name.strip().upper()
+    if not type_name:
+        return False, "Type name cannot be empty."
+    with get_connection() as conn:
+        if row_id:
+            conn.execute("UPDATE account_types SET type_name=? WHERE id=?", (type_name, row_id))
+        else:
+            try:
+                conn.execute("INSERT INTO account_types (type_name) VALUES (?)", (type_name,))
+            except Exception:
+                return False, f"'{type_name}' already exists."
+        conn.commit()
+    return True, "Saved."
+
+def delete_account_type(row_id):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM account_types WHERE id=?", (row_id,))
+        conn.commit()
 
 def delete_account(ac_code):
     with get_connection() as conn:
